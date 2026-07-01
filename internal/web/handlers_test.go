@@ -9,6 +9,8 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/dereknola/FogCast/internal/config"
@@ -152,6 +154,96 @@ func TestMapUploadRejectsInvalidType(t *testing.T) {
 	if res.Code != http.StatusBadRequest {
 		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, res.Code)
 	}
+}
+
+func TestMapUploadReplacesPreviousAsset(t *testing.T) {
+	dataDir := t.TempDir()
+	server := NewServer(config.Config{
+		StaticDir:      "static",
+		DataDir:        dataDir,
+		MaxUploadBytes: 5 * 1024 * 1024,
+	}, session.NewManager(nil))
+
+	first := uploadMap(t, server)
+	firstPath := filepath.Join(dataDir, "maps", first.ID+".webp")
+	if _, err := os.Stat(firstPath); err != nil {
+		t.Fatalf("expected first uploaded map file at %q: %v", firstPath, err)
+	}
+
+	second := uploadMap(t, server)
+	if second.ID == first.ID {
+		t.Fatalf("expected replacement map to use a new id")
+	}
+
+	if _, err := os.Stat(firstPath); !os.IsNotExist(err) {
+		t.Fatalf("expected first map asset to be removed, got err=%v", err)
+	}
+
+	oldAssetReq := httptest.NewRequest(http.MethodGet, first.URL, nil)
+	oldAssetRes := httptest.NewRecorder()
+	server.Handler().ServeHTTP(oldAssetRes, oldAssetReq)
+	if oldAssetRes.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d for replaced asset, got %d", http.StatusNotFound, oldAssetRes.Code)
+	}
+}
+
+func TestMapUploadPersistsActiveMapMetadata(t *testing.T) {
+	dataDir := t.TempDir()
+	server := NewServer(config.Config{
+		StaticDir:      "static",
+		DataDir:        dataDir,
+		MaxUploadBytes: 5 * 1024 * 1024,
+	}, session.NewManager(nil))
+
+	uploaded := uploadMap(t, server)
+
+	persisted, err := session.LoadActiveMap(dataDir)
+	if err != nil {
+		t.Fatalf("load persisted active map: %v", err)
+	}
+	if persisted == nil {
+		t.Fatalf("expected persisted active map to be present")
+	}
+
+	if *persisted != uploaded {
+		t.Fatalf("persisted map mismatch: expected %+v, got %+v", uploaded, *persisted)
+	}
+}
+
+func uploadMap(t *testing.T, server *Server) session.MapState {
+	t.Helper()
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	filePart, err := writer.CreateFormFile("map", "battlemap.png")
+	if err != nil {
+		t.Fatalf("create form file: %v", err)
+	}
+
+	if err := png.Encode(filePart, sampleImage()); err != nil {
+		t.Fatalf("encode png: %v", err)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/map", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	res := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(res, req)
+
+	if res.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d", http.StatusCreated, res.Code)
+	}
+
+	var uploaded session.MapState
+	if err := json.NewDecoder(res.Body).Decode(&uploaded); err != nil {
+		t.Fatalf("decode upload response: %v", err)
+	}
+
+	return uploaded
 }
 
 func sampleImage() image.Image {
