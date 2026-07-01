@@ -7,6 +7,7 @@ const serverVersion = "dev"
 type Manager struct {
 	mu    sync.RWMutex
 	state State
+	mask  []byte
 }
 
 type State struct {
@@ -29,6 +30,8 @@ type MaskState struct {
 }
 
 func NewManager(initialMap *MapState) *Manager {
+	mask := make([]byte, 512*512)
+
 	return &Manager{
 		state: State{
 			ActiveMap: cloneMapState(initialMap),
@@ -38,6 +41,7 @@ func NewManager(initialMap *MapState) *Manager {
 			},
 			ServerVersion: serverVersion,
 		},
+		mask: mask,
 	}
 }
 
@@ -53,6 +57,53 @@ func (m *Manager) SetActiveMap(activeMap *MapState) {
 	defer m.mu.Unlock()
 
 	m.state.ActiveMap = cloneMapState(activeMap)
+}
+
+func (m *Manager) MaskCopy() []byte {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	copyMask := make([]byte, len(m.mask))
+	copy(copyMask, m.mask)
+	return copyMask
+}
+
+func (m *Manager) SetMask(mask []byte) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if len(mask) != len(m.mask) {
+		return false
+	}
+
+	copy(m.mask, mask)
+	return true
+}
+
+func (m *Manager) RevealAll() []byte {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for i := range m.mask {
+		m.mask[i] = 255
+	}
+
+	copyMask := make([]byte, len(m.mask))
+	copy(copyMask, m.mask)
+	return copyMask
+}
+
+func (m *Manager) ShroudAll() []byte {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for i := range m.mask {
+		m.mask[i] = 0
+	}
+
+	copyMask := make([]byte, len(m.mask))
+	copy(copyMask, m.mask)
+	return copyMask
 }
 
 func cloneMapState(input *MapState) *MapState {

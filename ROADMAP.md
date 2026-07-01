@@ -18,7 +18,7 @@
 - Serve the active map to both clients.
 - Persist active map metadata.
 
-#### Milestone 3: full-mask fog sync
+#### Milestone 3 (COMPLETED): full-mask fog sync
 
 - Add authoritative in-memory mask state.
 - Add DM WebSocket and player WebSocket endpoints.

@@ -40,6 +40,8 @@
   let rectStart: { x: number; y: number } | null = null;
   let rectPreview: { x0: number; y0: number; x1: number; y1: number } | null = null;
   let previewObjectUrl = '';
+  let socket: WebSocket | null = null;
+  let reconnectTimer: ReturnType<typeof window.setTimeout> | null = null;
 
   const ALLOWED_UPLOAD_TYPES = new Set([
     'image/png',
@@ -56,6 +58,7 @@
 
   onMount(() => {
     void loadState();
+    connectSocket();
     syncCanvasSize();
 
     const observer = new ResizeObserver(() => {
@@ -69,11 +72,67 @@
 
     return () => {
       observer.disconnect();
+      if (reconnectTimer !== null) {
+        window.clearTimeout(reconnectTimer);
+      }
+      socket?.close();
       if (previewObjectUrl) {
         URL.revokeObjectURL(previewObjectUrl);
       }
     };
   });
+
+  function socketURL(path: string) {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${window.location.host}${path}`;
+  }
+
+  function connectSocket() {
+    if (socket && socket.readyState !== WebSocket.CLOSED) {
+      return;
+    }
+
+    socket = new WebSocket(socketURL('/ws/dm'));
+    socket.binaryType = 'arraybuffer';
+
+    socket.onmessage = (event) => {
+      if (!(event.data instanceof ArrayBuffer)) {
+        return;
+      }
+
+      const incoming = new Uint8Array(event.data);
+      if (incoming.length !== mask.length) {
+        return;
+      }
+
+      mask.set(incoming);
+      renderOverlay();
+    };
+
+    socket.onclose = () => {
+      socket = null;
+      reconnectTimer = window.setTimeout(() => {
+        reconnectTimer = null;
+        connectSocket();
+      }, 1500);
+    };
+  }
+
+  function sendMaskUpdate() {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    socket.send(mask.slice());
+  }
+
+  function sendControl(type: 'reveal_all' | 'shroud_all') {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    socket.send(JSON.stringify({ type }));
+  }
 
   async function loadState() {
     error = '';
@@ -295,19 +354,24 @@
 
     rectStart = null;
     rectPreview = null;
-    info = 'Mask updated locally. Server sync lands in the next backend milestone.';
+    info = 'Mask synced to connected players.';
+    sendMaskUpdate();
     renderOverlay();
   }
 
   function revealAll() {
     mask.fill(255);
-    info = 'All cells revealed locally.';
+    info = 'All cells revealed.';
+    sendControl('reveal_all');
+    sendMaskUpdate();
     renderOverlay();
   }
 
   function shroudAll() {
     mask.fill(0);
-    info = 'All cells shrouded locally.';
+    info = 'All cells shrouded.';
+    sendControl('shroud_all');
+    sendMaskUpdate();
     renderOverlay();
   }
 

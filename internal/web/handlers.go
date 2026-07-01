@@ -19,6 +19,7 @@ type Server struct {
 	cfg     config.Config
 	session *session.Manager
 	mux     *http.ServeMux
+	hub     *maskHub
 }
 
 func NewServer(cfg config.Config, manager *session.Manager) *Server {
@@ -26,6 +27,7 @@ func NewServer(cfg config.Config, manager *session.Manager) *Server {
 		cfg:     cfg,
 		session: manager,
 		mux:     http.NewServeMux(),
+		hub:     newMaskHub(),
 	}
 	server.routes()
 
@@ -40,6 +42,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/", s.handleRoot)
 	s.mux.HandleFunc("/api/state", s.handleState)
 	s.mux.HandleFunc("/api/map", s.handleMapUpload)
+	s.mux.HandleFunc("/ws/dm", s.handleDMWS)
+	s.mux.HandleFunc("/ws/player", s.handlePlayerWS)
 	s.mux.HandleFunc("/assets/maps/", s.handleMapAsset)
 	s.mux.Handle("/dm/", http.StripPrefix("/dm/", s.staticHandler("dm")))
 	s.mux.HandleFunc("/dm", s.handleApp("dm"))
@@ -199,14 +203,15 @@ var landingTemplate = template.Must(template.New("landing").Parse(`<!doctype htm
     <title>FogCast</title>
     <style>
       body { margin: 0; min-height: 100vh; display: grid; place-items: center; font-family: system-ui, sans-serif; background: #10141f; color: #f5f7fb; }
-      main { width: min(36rem, calc(100vw - 2rem)); }
+			main { width: min(36rem, calc(100vw - 2rem)); text-align: center; }
+			.brand { width: min(14rem, 42vw); height: auto; display: block; margin: 0 auto 1rem; }
       a { color: #8cc8ff; }
-      .links { display: flex; gap: 1rem; flex-wrap: wrap; }
+			.links { display: flex; gap: 1rem; flex-wrap: wrap; justify-content: center; }
     </style>
   </head>
   <body>
     <main>
-      <h1>FogCast</h1>
+			<img class="brand" src="/dm/fog_cast.webp" alt="FogCast logo">
       <p>Local-network battlemap fog of war.</p>
       <p class="links"><a href="/dm">Open DM controls</a><a href="/player">Open player display</a></p>
     </main>

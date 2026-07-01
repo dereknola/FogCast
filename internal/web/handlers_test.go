@@ -11,10 +11,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/dereknola/FogCast/internal/config"
 	"github.com/dereknola/FogCast/internal/session"
+	"github.com/gorilla/websocket"
 )
 
 func TestStateEndpoint(t *testing.T) {
@@ -210,6 +213,84 @@ func TestMapUploadPersistsActiveMapMetadata(t *testing.T) {
 	}
 }
 
+func TestPlayerWSReceivesInitialMask(t *testing.T) {
+	server := NewServer(config.Config{StaticDir: "static"}, session.NewManager(nil))
+	httpServer := httptest.NewServer(server.Handler())
+	defer httpServer.Close()
+
+	playerConn, _, err := websocket.DefaultDialer.Dial(wsURL(httpServer.URL, "/ws/player"), nil)
+	if err != nil {
+		t.Fatalf("dial player ws: %v", err)
+	}
+	defer playerConn.Close()
+
+	if err := playerConn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("set read deadline: %v", err)
+	}
+
+	messageType, payload, err := playerConn.ReadMessage()
+	if err != nil {
+		t.Fatalf("read initial player message: %v", err)
+	}
+	if messageType != websocket.BinaryMessage {
+		t.Fatalf("expected binary message, got %d", messageType)
+	}
+	if len(payload) != 512*512 {
+		t.Fatalf("expected mask payload length %d, got %d", 512*512, len(payload))
+	}
+
+	for i, value := range payload {
+		if value != 0 {
+			t.Fatalf("expected initial mask value 0 at index %d, got %d", i, value)
+		}
+	}
+}
+
+func TestDMWSBroadcastsMaskToPlayers(t *testing.T) {
+	server := NewServer(config.Config{StaticDir: "static"}, session.NewManager(nil))
+	httpServer := httptest.NewServer(server.Handler())
+	defer httpServer.Close()
+
+	playerConn, _, err := websocket.DefaultDialer.Dial(wsURL(httpServer.URL, "/ws/player"), nil)
+	if err != nil {
+		t.Fatalf("dial player ws: %v", err)
+	}
+	defer playerConn.Close()
+
+	if err := playerConn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("set player read deadline: %v", err)
+	}
+	if _, _, err := playerConn.ReadMessage(); err != nil {
+		t.Fatalf("read initial player message: %v", err)
+	}
+
+	dmConn, _, err := websocket.DefaultDialer.Dial(wsURL(httpServer.URL, "/ws/dm"), nil)
+	if err != nil {
+		t.Fatalf("dial dm ws: %v", err)
+	}
+	defer dmConn.Close()
+
+	updatedMask := bytes.Repeat([]byte{255}, 512*512)
+	if err := dmConn.WriteMessage(websocket.BinaryMessage, updatedMask); err != nil {
+		t.Fatalf("send dm mask update: %v", err)
+	}
+
+	if err := playerConn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("set player read deadline: %v", err)
+	}
+
+	messageType, payload, err := playerConn.ReadMessage()
+	if err != nil {
+		t.Fatalf("read player broadcast: %v", err)
+	}
+	if messageType != websocket.BinaryMessage {
+		t.Fatalf("expected binary broadcast, got %d", messageType)
+	}
+	if !bytes.Equal(payload, updatedMask) {
+		t.Fatalf("expected broadcast payload to match dm payload")
+	}
+}
+
 func uploadMap(t *testing.T, server *Server) session.MapState {
 	t.Helper()
 
@@ -255,4 +336,8 @@ func sampleImage() image.Image {
 	}
 
 	return img
+}
+
+func wsURL(httpURL, path string) string {
+	return "ws" + strings.TrimPrefix(httpURL, "http") + path
 }
