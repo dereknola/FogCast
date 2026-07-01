@@ -26,8 +26,9 @@
   type ControlsTab = 'map' | 'state';
   type StageTab = 'dm' | 'player';
 
-  const MASK_WIDTH = 512;
-  const MASK_HEIGHT = 512;
+  const DEFAULT_MASK_WIDTH = 512;
+  const DEFAULT_MASK_HEIGHT = 512;
+  const MASK_PATCH_MESSAGE_TYPE = 1;
   const MAX_DM_FOG_ALPHA = 170;
 
   let status = $state(null as ServerState | null);
@@ -64,6 +65,10 @@
   let panOrigin: { x: number; y: number } | null = null;
   let socket: WebSocket | null = null;
   let reconnectTimer: ReturnType<typeof window.setTimeout> | null = null;
+  let strokeDirtyRect: DirtyRect | null = null;
+
+  let maskWidth = DEFAULT_MASK_WIDTH;
+  let maskHeight = DEFAULT_MASK_HEIGHT;
 
   const ALLOWED_UPLOAD_TYPES = new Set([
     'image/png',
@@ -72,11 +77,18 @@
     'image/gif'
   ]);
 
-  const mask = new Uint8Array(MASK_WIDTH * MASK_HEIGHT);
-  const overlayBuffer = new Uint8ClampedArray(MASK_WIDTH * MASK_HEIGHT * 4);
+  let mask = new Uint8Array(maskWidth * maskHeight);
+  let overlayBuffer = new Uint8ClampedArray(maskWidth * maskHeight * 4);
   const scratchCanvas = document.createElement('canvas');
-  scratchCanvas.width = MASK_WIDTH;
-  scratchCanvas.height = MASK_HEIGHT;
+  scratchCanvas.width = maskWidth;
+  scratchCanvas.height = maskHeight;
+
+  type DirtyRect = {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
 
   onMount(() => {
     void loadState();
@@ -114,17 +126,28 @@
     socket = new WebSocket(socketURL('/ws/dm'));
     socket.binaryType = 'arraybuffer';
 
+    socket.onopen = () => {
+      void loadState();
+    };
+
     socket.onmessage = (event) => {
       if (!(event.data instanceof ArrayBuffer)) {
         return;
       }
 
       const incoming = new Uint8Array(event.data);
-      if (incoming.length !== mask.length) {
+      if (incoming.length === mask.length) {
+        mask.set(incoming);
+        renderOverlay();
         return;
       }
 
-      mask.set(incoming);
+      const patch = decodeMaskPatch(incoming);
+      if (!patch) {
+        return;
+      }
+
+      applyPatchToMask(patch);
       renderOverlay();
     };
 
@@ -145,9 +168,91 @@
     socket.send(mask.slice());
   }
 
-  function stageOrSyncMaskUpdate() {
-    if (autoSync) {
+  function sendMaskPatch(rect: DirtyRect) {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    const payload = encodeMaskPatch(rect);
+    if (!payload) {
       sendMaskUpdate();
+      return;
+    }
+
+    socket.send(payload);
+  }
+
+  function encodeMaskPatch(rect: DirtyRect) {
+    if (rect.width <= 0 || rect.height <= 0) {
+      return null;
+    }
+
+    const headerSize = 17;
+    const dataLength = rect.width * rect.height;
+    const out = new Uint8Array(headerSize + dataLength);
+    const view = new DataView(out.buffer);
+
+    out[0] = MASK_PATCH_MESSAGE_TYPE;
+    view.setUint32(1, rect.x, true);
+    view.setUint32(5, rect.y, true);
+    view.setUint32(9, rect.width, true);
+    view.setUint32(13, rect.height, true);
+
+    let offset = headerSize;
+    for (let row = 0; row < rect.height; row += 1) {
+      const srcStart = (rect.y + row) * maskWidth + rect.x;
+      out.set(mask.subarray(srcStart, srcStart + rect.width), offset);
+      offset += rect.width;
+    }
+
+    return out;
+  }
+
+  function decodeMaskPatch(payload: Uint8Array) {
+    const headerSize = 17;
+    if (payload.length < headerSize || payload[0] !== MASK_PATCH_MESSAGE_TYPE) {
+      return null;
+    }
+
+    const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+    const x = view.getUint32(1, true);
+    const y = view.getUint32(5, true);
+    const width = view.getUint32(9, true);
+    const height = view.getUint32(13, true);
+
+    if (width === 0 || height === 0 || x + width > maskWidth || y + height > maskHeight) {
+      return null;
+    }
+
+    const expected = headerSize + width * height;
+    if (payload.length !== expected) {
+      return null;
+    }
+
+    return {
+      x,
+      y,
+      width,
+      height,
+      data: payload.subarray(headerSize)
+    };
+  }
+
+  function applyPatchToMask(patch: { x: number; y: number; width: number; height: number; data: Uint8Array }) {
+    for (let row = 0; row < patch.height; row += 1) {
+      const srcStart = row * patch.width;
+      const dstStart = (patch.y + row) * maskWidth + patch.x;
+      mask.set(patch.data.subarray(srcStart, srcStart + patch.width), dstStart);
+    }
+  }
+
+  function stageOrSyncMaskUpdate(dirtyRect: DirtyRect | null = null) {
+    if (autoSync) {
+      if (dirtyRect) {
+        sendMaskPatch(dirtyRect);
+      } else {
+        sendMaskUpdate();
+      }
       hasPendingPush = false;
       info = 'Mask synced to connected players.';
       return;
@@ -212,6 +317,7 @@
       }
 
       status = await response.json();
+      ensureMaskDimensions(status?.mask?.width ?? DEFAULT_MASK_WIDTH, status?.mask?.height ?? DEFAULT_MASK_HEIGHT);
       mapImageUrl = status?.activeMap?.url ?? '';
       playerViewScale = status?.playerView?.scale ?? 1;
       playerViewOffsetX = status?.playerView?.offsetX ?? 0;
@@ -222,6 +328,19 @@
     }
 
     renderOverlay();
+  }
+
+  function ensureMaskDimensions(width: number, height: number) {
+    if (width <= 0 || height <= 0 || (width === maskWidth && height === maskHeight)) {
+      return;
+    }
+
+    maskWidth = width;
+    maskHeight = height;
+    mask = new Uint8Array(maskWidth * maskHeight);
+    overlayBuffer = new Uint8ClampedArray(maskWidth * maskHeight * 4);
+    scratchCanvas.width = maskWidth;
+    scratchCanvas.height = maskHeight;
   }
 
   function syncCanvasSize() {
@@ -260,7 +379,7 @@
       overlayBuffer[pixel + 3] = Math.round(((255 - maskValue) / 255) * MAX_DM_FOG_ALPHA);
     }
 
-    const image = new ImageData(overlayBuffer, MASK_WIDTH, MASK_HEIGHT);
+    const image = new ImageData(overlayBuffer, maskWidth, maskHeight);
     const scratchCtx = scratchCanvas.getContext('2d');
     if (!scratchCtx) {
       return;
@@ -319,13 +438,32 @@
 
   function toMaskPoint(normX: number, normY: number) {
     return {
-      x: Math.min(MASK_WIDTH - 1, Math.floor(normX * MASK_WIDTH)),
-      y: Math.min(MASK_HEIGHT - 1, Math.floor(normY * MASK_HEIGHT))
+      x: Math.min(maskWidth - 1, Math.floor(normX * maskWidth)),
+      y: Math.min(maskHeight - 1, Math.floor(normY * maskHeight))
     };
   }
 
   function clamp(value: number, min: number, max: number) {
     return Math.min(max, Math.max(min, value));
+  }
+
+  function mergeDirtyRect(next: DirtyRect) {
+    if (!strokeDirtyRect) {
+      strokeDirtyRect = { ...next };
+      return;
+    }
+
+    const x0 = Math.min(strokeDirtyRect.x, next.x);
+    const y0 = Math.min(strokeDirtyRect.y, next.y);
+    const x1 = Math.max(strokeDirtyRect.x + strokeDirtyRect.width - 1, next.x + next.width - 1);
+    const y1 = Math.max(strokeDirtyRect.y + strokeDirtyRect.height - 1, next.y + next.height - 1);
+
+    strokeDirtyRect = {
+      x: x0,
+      y: y0,
+      width: x1 - x0 + 1,
+      height: y1 - y0 + 1
+    };
   }
 
   function paintBrush(normX: number, normY: number) {
@@ -334,9 +472,16 @@
     const value = mode === 'reveal' ? 255 : 0;
 
     const minY = Math.max(0, center.y - radius);
-    const maxY = Math.min(MASK_HEIGHT - 1, center.y + radius);
+    const maxY = Math.min(maskHeight - 1, center.y + radius);
     const minX = Math.max(0, center.x - radius);
-    const maxX = Math.min(MASK_WIDTH - 1, center.x + radius);
+    const maxX = Math.min(maskWidth - 1, center.x + radius);
+
+    mergeDirtyRect({
+      x: minX,
+      y: minY,
+      width: maxX - minX + 1,
+      height: maxY - minY + 1
+    });
 
     for (let y = minY; y <= maxY; y += 1) {
       for (let x = minX; x <= maxX; x += 1) {
@@ -346,7 +491,7 @@
           continue;
         }
 
-        mask[y * MASK_WIDTH + x] = value;
+        mask[y * maskWidth + x] = value;
       }
     }
 
@@ -356,7 +501,7 @@
   function applyRect(
     start: { x: number; y: number },
     end: { x: number; y: number }
-  ) {
+  ): DirtyRect {
     const value = mode === 'reveal' ? 255 : 0;
     const a = toMaskPoint(start.x, start.y);
     const b = toMaskPoint(end.x, end.y);
@@ -367,13 +512,20 @@
     const maxY = Math.max(a.y, b.y);
 
     for (let y = minY; y <= maxY; y += 1) {
-      const row = y * MASK_WIDTH;
+      const row = y * maskWidth;
       for (let x = minX; x <= maxX; x += 1) {
         mask[row + x] = value;
       }
     }
 
     renderOverlay();
+
+    return {
+      x: minX,
+      y: minY,
+      width: maxX - minX + 1,
+      height: maxY - minY + 1
+    } as DirtyRect;
   }
 
   function onStagePointerDown(event: PointerEvent) {
@@ -381,6 +533,7 @@
       return;
     }
 
+    strokeDirtyRect = null;
     isPointerDown = true;
     activePointerId = event.pointerId;
     overlayCanvas.setPointerCapture(event.pointerId);
@@ -393,6 +546,7 @@
 
     const norm = normalizePointer(event);
     if (tool === 'brush') {
+      strokeDirtyRect = null;
       paintBrush(norm.x, norm.y);
       return;
     }
@@ -448,12 +602,19 @@
 
     if (tool === 'rectangle' && rectStart) {
       const norm = normalizePointer(event);
-      applyRect(rectStart, norm);
+      const dirty = applyRect(rectStart, norm);
+      rectStart = null;
+      rectPreview = null;
+      stageOrSyncMaskUpdate(dirty);
+      renderOverlay();
+      return;
     }
 
+    const dirty = strokeDirtyRect;
+    strokeDirtyRect = null;
     rectStart = null;
     rectPreview = null;
-    stageOrSyncMaskUpdate();
+    stageOrSyncMaskUpdate(dirty);
     renderOverlay();
   }
 

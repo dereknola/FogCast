@@ -1,6 +1,7 @@
 package web
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"net/http"
 	"sync"
@@ -11,7 +12,8 @@ import (
 )
 
 const (
-	wsWriteTimeout = 5 * time.Second
+	wsWriteTimeout            = 5 * time.Second
+	maskPatchMessageType byte = 1
 )
 
 type maskHub struct {
@@ -125,10 +127,20 @@ func (s *Server) handleDMWS(w http.ResponseWriter, r *http.Request) {
 
 		switch messageType {
 		case websocket.BinaryMessage:
-			if ok := s.session.SetMask(payload); !ok {
+			if ok := s.session.SetMask(payload); ok {
+				_ = session.SaveMask(s.cfg.DataDir, payload)
+				s.hub.broadcast(payload)
 				continue
 			}
-			_ = session.SaveMask(s.cfg.DataDir, payload)
+
+			patch, ok := decodeMaskPatchMessage(payload)
+			if !ok {
+				continue
+			}
+			if ok := s.session.ApplyMaskPatch(patch); !ok {
+				continue
+			}
+			_ = session.SaveMask(s.cfg.DataDir, s.session.MaskCopy())
 			s.hub.broadcast(payload)
 		case websocket.TextMessage:
 			var msg dmControlMessage
@@ -148,4 +160,36 @@ func (s *Server) handleDMWS(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+func decodeMaskPatchMessage(payload []byte) (session.MaskPatch, bool) {
+	const headerSize = 1 + 4 + 4 + 4 + 4
+	if len(payload) < headerSize {
+		return session.MaskPatch{}, false
+	}
+
+	if payload[0] != maskPatchMessageType {
+		return session.MaskPatch{}, false
+	}
+
+	x := int(binary.LittleEndian.Uint32(payload[1:5]))
+	y := int(binary.LittleEndian.Uint32(payload[5:9]))
+	width := int(binary.LittleEndian.Uint32(payload[9:13]))
+	height := int(binary.LittleEndian.Uint32(payload[13:17]))
+	if width <= 0 || height <= 0 {
+		return session.MaskPatch{}, false
+	}
+
+	expectedLength := headerSize + (width * height)
+	if len(payload) != expectedLength {
+		return session.MaskPatch{}, false
+	}
+
+	return session.MaskPatch{
+		X:      x,
+		Y:      y,
+		Width:  width,
+		Height: height,
+		Data:   payload[headerSize:],
+	}, true
 }

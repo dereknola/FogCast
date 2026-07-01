@@ -20,8 +20,10 @@ type ServerState = {
   serverVersion: string;
 };
 
-const MASK_WIDTH = 512;
-const MASK_HEIGHT = 512;
+const DEFAULT_MASK_WIDTH = 512;
+const DEFAULT_MASK_HEIGHT = 512;
+const MASK_PATCH_MESSAGE_TYPE = 1;
+const MAX_MASK_DIMENSION = 2048;
 
 const canvasEl = document.getElementById('fogcast-canvas');
 const statusEl = document.getElementById('status');
@@ -37,6 +39,7 @@ const canvas = canvasEl;
 const status = statusEl;
 const gl = canvas.getContext('webgl');
 if (!gl) {
+  status.textContent = 'This device/browser does not support WebGL. FogCast player requires WebGL support.';
   throw new Error('Missing WebGL context');
 }
 
@@ -97,8 +100,9 @@ if (!quad) {
 const mapTexture = createTexture(gl);
 const maskTexture = createTexture(gl);
 
-const initialMask = new Uint8Array(MASK_WIDTH * MASK_HEIGHT);
-let latestMask = initialMask;
+let maskWidth = DEFAULT_MASK_WIDTH;
+let maskHeight = DEFAULT_MASK_HEIGHT;
+let latestMask = new Uint8Array(maskWidth * maskHeight);
 let mapImage: HTMLImageElement | null = null;
 let activeMapID = '';
 let playerViewScale = 1;
@@ -158,6 +162,7 @@ function connectSocket() {
 
   socket.onopen = () => {
     status.textContent = status.textContent || 'Connected';
+    void refreshState();
   };
 
   socket.onmessage = (event) => {
@@ -166,12 +171,25 @@ function connectSocket() {
     }
 
     const incoming = new Uint8Array(event.data);
-    if (incoming.length !== MASK_WIDTH * MASK_HEIGHT) {
+    if (incoming.length === latestMask.length) {
+      latestMask.set(incoming);
+      updateMaskTexture(latestMask);
+      render();
       return;
     }
 
-    latestMask = incoming;
-    updateMaskTexture(latestMask);
+    const patch = decodeMaskPatch(incoming);
+    if (!patch) {
+      return;
+    }
+
+    for (let row = 0; row < patch.height; row += 1) {
+      const srcStart = row * patch.width;
+      const dstStart = (patch.y + row) * maskWidth + patch.x;
+      latestMask.set(patch.data.subarray(srcStart, srcStart + patch.width), dstStart);
+    }
+
+    updateMaskTexturePatch(patch.x, patch.y, patch.width, patch.height, patch.data);
     render();
   };
 
@@ -205,6 +223,7 @@ async function loadState() {
   }
 
   const state = (await response.json()) as ServerState;
+  ensureMaskDimensions(state.mask.width, state.mask.height);
   playerViewScale = state.playerView?.scale ?? 1;
   playerViewOffsetX = state.playerView?.offsetX ?? 0;
   playerViewOffsetY = state.playerView?.offsetY ?? 0;
@@ -283,7 +302,62 @@ function updateMapTexture(image: HTMLImageElement) {
 
 function updateMaskTexture(mask: Uint8Array) {
   gl.bindTexture(gl.TEXTURE_2D, maskTexture);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, MASK_WIDTH, MASK_HEIGHT, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, mask);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, maskWidth, maskHeight, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, mask);
+}
+
+function updateMaskTexturePatch(x: number, y: number, width: number, height: number, data: Uint8Array) {
+  gl.bindTexture(gl.TEXTURE_2D, maskTexture);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, width, height, gl.LUMINANCE, gl.UNSIGNED_BYTE, data);
+}
+
+function ensureMaskDimensions(width: number, height: number) {
+  if (width <= 0 || height <= 0) {
+    return;
+  }
+
+  if (width > MAX_MASK_DIMENSION || height > MAX_MASK_DIMENSION) {
+    status.textContent = `Mask size ${width}x${height} is unsupported on this device (max ${MAX_MASK_DIMENSION}x${MAX_MASK_DIMENSION}).`;
+    return;
+  }
+
+  if (width === maskWidth && height === maskHeight) {
+    return;
+  }
+
+  maskWidth = width;
+  maskHeight = height;
+  latestMask = new Uint8Array(maskWidth * maskHeight);
+  updateMaskTexture(latestMask);
+}
+
+function decodeMaskPatch(payload: Uint8Array) {
+  const headerSize = 17;
+  if (payload.length < headerSize || payload[0] !== MASK_PATCH_MESSAGE_TYPE) {
+    return null;
+  }
+
+  const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+  const x = view.getUint32(1, true);
+  const y = view.getUint32(5, true);
+  const width = view.getUint32(9, true);
+  const height = view.getUint32(13, true);
+
+  if (width === 0 || height === 0 || x + width > maskWidth || y + height > maskHeight) {
+    return null;
+  }
+
+  const expected = headerSize + width * height;
+  if (payload.length !== expected) {
+    return null;
+  }
+
+  return {
+    x,
+    y,
+    width,
+    height,
+    data: payload.subarray(headerSize)
+  };
 }
 
 function createTexture(context: WebGLRenderingContext) {

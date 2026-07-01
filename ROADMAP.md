@@ -34,13 +34,12 @@
 - Add zoom and pan for DM map editing GUI.
 - Persist mask snapshots.
 
-#### Milestone 5: performance pass
+#### Milestone 5 (COMPLETED): performance pass
 
 - Add ENV VAR control for mask size.
 - Add dirty-rectangle mask patches.
 - Reduce player allocations during socket updates and rendering.
 - Add reconnect/state recovery.
-- Add test that validates player-view has low memory requirements and good performance for low-end devices.
 - Add clear limits and error messages for unsupported maps/devices.
 
 #### Milestone 6: Docker image and GHCR release
@@ -53,4 +52,10 @@
 - Publish `latest`, semantic version tags, and commit SHA tags.
 - Build and publish `linux/amd64` and `linux/arm64` images.
 - Document self-hosting with Docker, Docker Compose, and persistent storage.
-- Add a container smoke test that starts the image and checks `/api/state`.
+
+#### Milestone 7: CI validation and quality gates
+
+- Add a GitHub Actions workflow that runs on `push` and `workflow_dispatch`.
+- Add a container smoke test job that starts the built image and checks `/api/state`.
+- Add a performance test job that validates player-view low-memory behavior and baseline performance for low-end devices.
+- Enforce pass/fail quality gates for smoke and performance checks before merge/release.

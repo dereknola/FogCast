@@ -27,7 +27,7 @@ const (
 var (
 	ErrFileTooLarge      = errors.New("uploaded file is too large")
 	ErrUnsupportedType   = errors.New("unsupported image type")
-	ErrInvalidDimensions = errors.New("invalid image dimensions")
+	ErrInvalidDimensions = fmt.Errorf("unsupported image dimensions (supported: %dx%d to %dx%d)", minImageDimension, minImageDimension, maxImageDimension, maxImageDimension)
 )
 
 type UploadResult struct {

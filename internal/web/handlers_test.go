@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"image"
 	"image/color"
@@ -435,6 +436,55 @@ func TestDMWSBroadcastsMaskToPlayers(t *testing.T) {
 	}
 }
 
+func TestDMWSBroadcastsMaskPatchToPlayers(t *testing.T) {
+	server := NewServer(config.Config{StaticDir: "static"}, session.NewManager(nil))
+	httpServer := httptest.NewServer(server.Handler())
+	defer httpServer.Close()
+
+	playerConn, _, err := websocket.DefaultDialer.Dial(wsURL(httpServer.URL, "/ws/player"), nil)
+	if err != nil {
+		t.Fatalf("dial player ws: %v", err)
+	}
+	defer playerConn.Close()
+
+	if err := playerConn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("set player read deadline: %v", err)
+	}
+	if _, _, err := playerConn.ReadMessage(); err != nil {
+		t.Fatalf("read initial player message: %v", err)
+	}
+
+	dmConn, _, err := websocket.DefaultDialer.Dial(wsURL(httpServer.URL, "/ws/dm"), nil)
+	if err != nil {
+		t.Fatalf("dial dm ws: %v", err)
+	}
+	defer dmConn.Close()
+
+	patch := encodeMaskPatchMessageForTest(10, 20, 16, 12, 200)
+	if len(patch) >= 512*512 {
+		t.Fatalf("expected patch payload to be smaller than full mask")
+	}
+
+	if err := dmConn.WriteMessage(websocket.BinaryMessage, patch); err != nil {
+		t.Fatalf("send dm mask patch: %v", err)
+	}
+
+	if err := playerConn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("set player read deadline: %v", err)
+	}
+
+	messageType, payload, err := playerConn.ReadMessage()
+	if err != nil {
+		t.Fatalf("read player patch broadcast: %v", err)
+	}
+	if messageType != websocket.BinaryMessage {
+		t.Fatalf("expected binary broadcast, got %d", messageType)
+	}
+	if !bytes.Equal(payload, patch) {
+		t.Fatalf("expected patch broadcast payload to match dm payload")
+	}
+}
+
 func TestDMWSReceivesInitialMaskOnConnect(t *testing.T) {
 	manager := session.NewManager(nil)
 	expectedMask := bytes.Repeat([]byte{200}, 512*512)
@@ -547,4 +597,20 @@ func sampleImage() image.Image {
 
 func wsURL(httpURL, path string) string {
 	return "ws" + strings.TrimPrefix(httpURL, "http") + path
+}
+
+func encodeMaskPatchMessageForTest(x, y, width, height int, fill byte) []byte {
+	const headerSize = 17
+	payload := make([]byte, headerSize+width*height)
+	payload[0] = 1
+	binary.LittleEndian.PutUint32(payload[1:5], uint32(x))
+	binary.LittleEndian.PutUint32(payload[5:9], uint32(y))
+	binary.LittleEndian.PutUint32(payload[9:13], uint32(width))
+	binary.LittleEndian.PutUint32(payload[13:17], uint32(height))
+
+	for i := headerSize; i < len(payload); i += 1 {
+		payload[i] = fill
+	}
+
+	return payload
 }

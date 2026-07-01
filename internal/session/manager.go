@@ -3,6 +3,11 @@ package session
 import "sync"
 
 const serverVersion = "dev"
+const (
+	defaultMaskSize = 512
+	minMaskSize     = 128
+	maxMaskSize     = 2048
+)
 
 type Manager struct {
 	mu    sync.RWMutex
@@ -23,6 +28,14 @@ type PlayerViewState struct {
 	OffsetY int     `json:"offsetY"`
 }
 
+type MaskPatch struct {
+	X      int
+	Y      int
+	Width  int
+	Height int
+	Data   []byte
+}
+
 type MapState struct {
 	ID     string `json:"id"`
 	Name   string `json:"name"`
@@ -37,7 +50,12 @@ type MaskState struct {
 }
 
 func NewManager(initialMap *MapState) *Manager {
-	mask := make([]byte, 512*512)
+	return NewManagerWithMaskSize(initialMap, defaultMaskSize)
+}
+
+func NewManagerWithMaskSize(initialMap *MapState, requestedMaskSize int) *Manager {
+	maskSize := normalizeMaskSize(requestedMaskSize)
+	mask := make([]byte, maskSize*maskSize)
 
 	return &Manager{
 		state: State{
@@ -48,13 +66,23 @@ func NewManager(initialMap *MapState) *Manager {
 				OffsetY: 0,
 			},
 			Mask: MaskState{
-				Width:  512,
-				Height: 512,
+				Width:  maskSize,
+				Height: maskSize,
 			},
 			ServerVersion: serverVersion,
 		},
 		mask: mask,
 	}
+}
+
+func normalizeMaskSize(value int) int {
+	if value < minMaskSize {
+		return defaultMaskSize
+	}
+	if value > maxMaskSize {
+		return maxMaskSize
+	}
+	return value
 }
 
 func (m *Manager) State() State {
@@ -96,6 +124,34 @@ func (m *Manager) SetMask(mask []byte) bool {
 	}
 
 	copy(m.mask, mask)
+	return true
+}
+
+func (m *Manager) ApplyMaskPatch(patch MaskPatch) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if patch.Width <= 0 || patch.Height <= 0 || patch.X < 0 || patch.Y < 0 {
+		return false
+	}
+
+	maskWidth := m.state.Mask.Width
+	maskHeight := m.state.Mask.Height
+	if patch.X+patch.Width > maskWidth || patch.Y+patch.Height > maskHeight {
+		return false
+	}
+
+	expected := patch.Width * patch.Height
+	if len(patch.Data) != expected {
+		return false
+	}
+
+	for row := 0; row < patch.Height; row += 1 {
+		srcStart := row * patch.Width
+		dstStart := (patch.Y+row)*maskWidth + patch.X
+		copy(m.mask[dstStart:dstStart+patch.Width], patch.Data[srcStart:srcStart+patch.Width])
+	}
+
 	return true
 }
 

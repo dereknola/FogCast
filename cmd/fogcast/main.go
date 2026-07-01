@@ -18,7 +18,7 @@ func main() {
 		log.Printf("warning: could not load persisted state: %v", err)
 	}
 
-	manager := session.NewManager(activeMap)
+	manager := session.NewManagerWithMaskSize(activeMap, cfg.MaskSize)
 
 	persistedMask, err := session.LoadMask(cfg.DataDir, manager.MaskLength())
 	if err != nil {
