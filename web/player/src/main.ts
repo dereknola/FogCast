@@ -15,19 +15,22 @@ type ServerState = {
   serverVersion: string;
 };
 
-const canvas = document.getElementById('fogcast-canvas');
-const status = document.getElementById('status');
-const ctx = canvas instanceof HTMLCanvasElement ? canvas.getContext('2d') : null;
+const canvasEl = document.getElementById('fogcast-canvas');
+const statusEl = document.getElementById('status');
 
-if (!(canvas instanceof HTMLCanvasElement)) {
+if (!(canvasEl instanceof HTMLCanvasElement)) {
   throw new Error('Missing player canvas');
 }
-if (!status) {
+if (!statusEl) {
   throw new Error('Missing player status element');
 }
-if (!ctx) {
+const canvas = canvasEl;
+const status = statusEl;
+const ctx2d = canvas.getContext('2d');
+if (!ctx2d) {
   throw new Error('Missing 2D context');
 }
+const ctx = ctx2d;
 
 let loadedMap: HTMLImageElement | null = null;
 let activeMapID = '';

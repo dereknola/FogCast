@@ -22,13 +22,13 @@
   const MASK_WIDTH = 512;
   const MASK_HEIGHT = 512;
 
-  let state = $state<ServerState | null>(null);
+  let status = $state(null as ServerState | null);
   let error = $state('');
   let info = $state('');
   let uploading = $state(false);
-  let selectedFile = $state<File | null>(null);
-  let tool = $state<Tool>('brush');
-  let mode = $state<PaintMode>('reveal');
+  let selectedFile = $state(null as File | null);
+  let tool = $state('brush' as Tool);
+  let mode = $state('reveal' as PaintMode);
   let brushSize = $state(36);
   let mapImageUrl = $state('');
 
@@ -86,8 +86,8 @@
         return;
       }
 
-      state = await response.json();
-      mapImageUrl = state?.activeMap?.url ?? '';
+      status = await response.json();
+      mapImageUrl = status?.activeMap?.url ?? '';
       info = 'Server state refreshed.';
     } catch {
       error = 'Unable to reach server state endpoint.';
@@ -322,7 +322,7 @@
     selectedFile = null;
 
     if (!file) {
-      mapImageUrl = state?.activeMap?.url ?? '';
+      mapImageUrl = status?.activeMap?.url ?? '';
       return;
     }
 
@@ -330,7 +330,7 @@
       clearMessage();
       error = 'Unsupported file type. Use PNG, JPEG, WebP, or GIF.';
       target.value = '';
-      mapImageUrl = state?.activeMap?.url ?? '';
+      mapImageUrl = status?.activeMap?.url ?? '';
       return;
     }
 
@@ -428,15 +428,15 @@
       </div>
 
       <h2>Server state</h2>
-      {#if state}
+      {#if status}
         <dl>
           <div>
             <dt>Active map</dt>
-            <dd>{state.activeMap ? state.activeMap.name : 'None loaded'}</dd>
+            <dd>{status.activeMap ? status.activeMap.name : 'None loaded'}</dd>
           </div>
           <div>
             <dt>Server version</dt>
-            <dd>{state.serverVersion}</dd>
+            <dd>{status.serverVersion}</dd>
           </div>
         </dl>
       {:else}

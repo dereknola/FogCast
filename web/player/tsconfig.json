@@ -8,6 +8,6 @@
     "isolatedModules": true,
     "strict": true
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.d.ts", "src/**/*.ts"]
 }
 
