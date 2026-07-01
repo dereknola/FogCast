@@ -1,0 +1,180 @@
+:root {
+  color: #f8f4ec;
+  background: radial-gradient(circle at 20% 0%, #2a3d45 0%, #1a2328 36%, #11171b 100%);
+  font-family: "Space Grotesk", "Trebuchet MS", "Segoe UI", sans-serif;
+}
+
+body {
+  margin: 0;
+}
+
+main {
+  display: grid;
+  gap: 1.25rem;
+  min-height: 100vh;
+  padding: clamp(0.9rem, 3.2vw, 2.4rem);
+  box-sizing: border-box;
+}
+
+.hero {
+  max-width: 70rem;
+}
+
+.eyebrow {
+  margin: 0 0 0.5rem;
+  color: #f7be69;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+h1,
+h2,
+p {
+  margin-top: 0;
+}
+
+.panel {
+  padding: 1rem;
+  border: 1px solid #31424b;
+  border-radius: 1rem;
+  background: rgba(14, 20, 24, 0.82);
+  backdrop-filter: blur(6px);
+}
+
+.layout {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(16rem, 22rem) minmax(0, 1fr);
+  align-items: start;
+}
+
+.controls {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.label {
+  display: block;
+  color: #bdd0d8;
+  font-size: 0.9rem;
+  margin-bottom: -0.2rem;
+}
+
+dl {
+  display: grid;
+  gap: 0.55rem;
+}
+
+dt {
+  color: #98b1bb;
+  font-size: 0.875rem;
+}
+
+dd {
+  margin: 0.15rem 0 0;
+  font-weight: 700;
+}
+
+button {
+  border: 1px solid #4c656f;
+  border-radius: 0.6rem;
+  padding: 0.6rem 0.8rem;
+  color: #eff6f8;
+  background: #24343d;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button.active {
+  border-color: #f7be69;
+  background: #654a22;
+}
+
+button:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.button-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+input[type="file"],
+input[type="range"] {
+  width: 100%;
+}
+
+.error {
+  color: #ff9f9f;
+}
+
+.info {
+  color: #94f4b2;
+}
+
+.stage-panel {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.stage {
+  position: relative;
+  min-height: min(62vh, 36rem);
+  border-radius: 0.9rem;
+  overflow: hidden;
+  border: 1px solid #39505b;
+  background:
+    linear-gradient(45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.03) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.03) 75%),
+    #121d22;
+  background-size: 22px 22px;
+  background-position: 0 0, 0 11px, 11px -11px, -11px 0;
+}
+
+.map {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+  pointer-events: none;
+}
+
+.map.fallback {
+  display: grid;
+  place-items: center;
+  color: #a6b6bd;
+  font-weight: 700;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.hint {
+  color: #a6bcc5;
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+@media (max-width: 960px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .stage {
+    min-height: 52vh;
+  }
+}
+

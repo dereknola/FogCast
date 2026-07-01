@@ -1,0 +1,48 @@
+package config
+
+import (
+	"os"
+	"strconv"
+)
+
+const defaultMaxUploadMB = 50
+
+type Config struct {
+	Addr           string
+	DataDir        string
+	StaticDir      string
+	MaxUploadBytes int64
+}
+
+func Load() Config {
+	maxUploadMB := envInt("FOGCAST_MAX_UPLOAD_MB", defaultMaxUploadMB)
+
+	return Config{
+		Addr:           env("FOGCAST_ADDR", ":8080"),
+		DataDir:        env("FOGCAST_DATA_DIR", "data"),
+		StaticDir:      env("FOGCAST_STATIC_DIR", "static"),
+		MaxUploadBytes: int64(maxUploadMB) * 1024 * 1024,
+	}
+}
+
+func env(key, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+
+	return fallback
+}
+
+func envInt(key string, fallback int) int {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed <= 0 {
+		return fallback
+	}
+
+	return parsed
+}

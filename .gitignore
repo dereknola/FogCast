@@ -1,0 +1,8 @@
+bin/
+data/
+node_modules/
+static/*
+!static/.gitkeep
+web/*/dist/
+web/*/node_modules/
+

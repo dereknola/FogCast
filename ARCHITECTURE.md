@@ -332,6 +332,7 @@ Recommended self-hosting commands once the image exists:
 docker run --rm -p 8080:8080 -v fogcast-data:/data ghcr.io/dereknola/fogcast:latest
 docker compose up -d
 ```
+
 ### Testing strategy
 
 - Unit test mask operations in Go or TypeScript, depending on where the authoritative editing logic lands.

@@ -2,7 +2,7 @@
 
 ## Implementation milestones
 
-#### Milestone 1: runnable skeleton
+#### Milestone 1 (COMPLETED): runnable skeleton
 
 - Initialize Go module and HTTP server.
 - Add `/dm`, `/player`, and `/api/state` routes.
