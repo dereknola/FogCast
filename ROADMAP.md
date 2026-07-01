@@ -9,9 +9,10 @@
 - Add placeholder DM and player frontends.
 - Add a basic build script.
 
-#### Milestone 2: active map upload
+#### Milestone 2 (COMPLETED): active map upload
 
 - Implement `POST /api/map`.
+- Add a file upload form to the DM frontend.
 - Validate uploaded images.
 - Generate optimized WebP output.
 - Serve the active map to both clients.
@@ -21,16 +22,16 @@
 
 - Add authoritative in-memory mask state.
 - Add DM WebSocket and player WebSocket endpoints.
-- Implement reveal all and shroud all.
+- Implement reveal all and shroud all GUI.
 - Broadcast full mask updates to connected players.
 - Render map plus mask in the player WebGL client.
 
 #### Milestone 4: DM editing tools
 
-- Implement brush reveal/shroud.
-- Implement brush size controls.
-- Implement rectangle reveal/shroud.
-- Add zoom and pan for DM map editing.
+- Implement brush reveal/shroud GUI.
+- Implement brush size controls GUI.
+- Implement rectangle reveal/shroud GUI.
+- Add zoom and pan for DM map editing GUI.
 - Persist mask snapshots.
 
 #### Milestone 5: performance pass

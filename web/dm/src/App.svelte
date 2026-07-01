@@ -41,6 +41,13 @@
   let rectPreview: { x0: number; y0: number; x1: number; y1: number } | null = null;
   let previewObjectUrl = '';
 
+  const ALLOWED_UPLOAD_TYPES = new Set([
+    'image/png',
+    'image/jpeg',
+    'image/webp',
+    'image/gif'
+  ]);
+
   const mask = new Uint8Array(MASK_WIDTH * MASK_HEIGHT);
   const overlayBuffer = new Uint8ClampedArray(MASK_WIDTH * MASK_HEIGHT * 4);
   const scratchCanvas = document.createElement('canvas');
@@ -312,11 +319,22 @@
   function onFileSelected(event: Event) {
     const target = event.currentTarget as HTMLInputElement;
     const file = target.files?.[0] ?? null;
-    selectedFile = file;
+    selectedFile = null;
 
     if (!file) {
+      mapImageUrl = state?.activeMap?.url ?? '';
       return;
     }
+
+    if (!ALLOWED_UPLOAD_TYPES.has(file.type)) {
+      clearMessage();
+      error = 'Unsupported file type. Use PNG, JPEG, WebP, or GIF.';
+      target.value = '';
+      mapImageUrl = state?.activeMap?.url ?? '';
+      return;
+    }
+
+    selectedFile = file;
 
     clearMessage();
     if (previewObjectUrl) {
@@ -347,10 +365,12 @@
       });
 
       if (!response.ok) {
-        error = `Map upload not available yet (${response.status}).`;
+        const message = await response.text();
+        error = message || `Map upload failed with ${response.status}.`;
         return;
       }
 
+      selectedFile = null;
       info = 'Map uploaded successfully.';
       await loadState();
     } catch {
@@ -365,7 +385,7 @@
   <header class="hero">
     <p class="eyebrow">FogCast DM</p>
     <h1>Control surface</h1>
-    <p>Upload a map, choose your tool, and paint the fog mask. Current edits render locally in the browser and are ready to wire to WebSocket sync.</p>
+    <p>Upload a map, choose your tool, and paint the fog mask. Current edits render locally in the browser.</p>
   </header>
 
   <div class="layout">
@@ -373,7 +393,10 @@
       <h2>Map</h2>
       <label class="label" for="map-file">Image file</label>
       <input id="map-file" type="file" accept="image/*" onchange={onFileSelected} />
-      <button type="button" onclick={uploadMap} disabled={uploading}>
+      {#if selectedFile}
+        <p class="file-meta">Selected: {selectedFile.name} ({Math.max(1, Math.round(selectedFile.size / 1024))} KB)</p>
+      {/if}
+      <button type="button" onclick={uploadMap} disabled={uploading || !selectedFile}>
         {uploading ? 'Uploading...' : 'Upload map'}
       </button>
 
@@ -412,10 +435,6 @@
             <dd>{state.activeMap ? state.activeMap.name : 'None loaded'}</dd>
           </div>
           <div>
-            <dt>Mask</dt>
-            <dd>{state.mask.width} x {state.mask.height}</dd>
-          </div>
-          <div>
             <dt>Server version</dt>
             <dd>{state.serverVersion}</dd>
           </div>
@@ -452,7 +471,7 @@
           onpointercancel={onStagePointerUp}
         ></canvas>
       </div>
-      <p class="hint">Brush paints continuously. Rectangle applies on pointer release. Reveal = visible map, shroud = hidden map.</p>
+      <p class="hint">Brush paints continuously. Rectangle applies on pointer release.</p>
     </section>
   </div>
 </main>

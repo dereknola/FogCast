@@ -17,6 +17,7 @@ type ServerState = {
 
 const canvas = document.getElementById('fogcast-canvas');
 const status = document.getElementById('status');
+const ctx = canvas instanceof HTMLCanvasElement ? canvas.getContext('2d') : null;
 
 if (!(canvas instanceof HTMLCanvasElement)) {
   throw new Error('Missing player canvas');
@@ -24,11 +25,34 @@ if (!(canvas instanceof HTMLCanvasElement)) {
 if (!status) {
   throw new Error('Missing player status element');
 }
+if (!ctx) {
+  throw new Error('Missing 2D context');
+}
+
+let loadedMap: HTMLImageElement | null = null;
+let activeMapID = '';
+let refreshing = false;
 
 resizeCanvas();
 window.addEventListener('resize', resizeCanvas);
 
-void loadState();
+void refreshState();
+window.setInterval(() => {
+  void refreshState();
+}, 2000);
+
+async function refreshState() {
+  if (refreshing) {
+    return;
+  }
+  refreshing = true;
+
+  try {
+    await loadState();
+  } finally {
+    refreshing = false;
+  }
+}
 
 async function loadState() {
   const response = await fetch('/api/state');
@@ -38,14 +62,81 @@ async function loadState() {
   }
 
   const state = (await response.json()) as ServerState;
-  status.textContent = state.activeMap
-    ? `Ready: ${state.activeMap.name}`
-    : `Waiting for a map. Mask ${state.mask.width} x ${state.mask.height}.`;
+  if (!state.activeMap) {
+    loadedMap = null;
+    activeMapID = '';
+    render();
+    status.textContent = `Waiting for a map. Mask ${state.mask.width} x ${state.mask.height}.`;
+    return;
+  }
+
+  if (state.activeMap.id === activeMapID && loadedMap) {
+    status.textContent = `Ready: ${state.activeMap.name}`;
+    return;
+  }
+
+  try {
+    loadedMap = await loadMapImage(state.activeMap.url, state.activeMap.id);
+    activeMapID = state.activeMap.id;
+    render();
+    status.textContent = `Ready: ${state.activeMap.name}`;
+  } catch {
+    status.textContent = `Map load failed for ${state.activeMap.name}`;
+  }
 }
 
 function resizeCanvas() {
   const scale = window.devicePixelRatio || 1;
   canvas.width = Math.floor(window.innerWidth * scale);
   canvas.height = Math.floor(window.innerHeight * scale);
+
+  render();
+}
+
+function render() {
+  ctx.fillStyle = '#05070d';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  if (!loadedMap) {
+    return;
+  }
+
+  const target = contain(loadedMap.width, loadedMap.height, canvas.width, canvas.height);
+  ctx.drawImage(loadedMap, target.x, target.y, target.width, target.height);
+}
+
+function loadMapImage(url: string, revision: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.decoding = 'async';
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('failed to load map image'));
+    image.src = `${url}?v=${encodeURIComponent(revision)}`;
+  });
+}
+
+function contain(sourceWidth: number, sourceHeight: number, maxWidth: number, maxHeight: number) {
+  const sourceRatio = sourceWidth / sourceHeight;
+  const maxRatio = maxWidth / maxHeight;
+
+  if (sourceRatio > maxRatio) {
+    const width = maxWidth;
+    const height = Math.round(width / sourceRatio);
+    return {
+      x: 0,
+      y: Math.floor((maxHeight - height) / 2),
+      width,
+      height
+    };
+  }
+
+  const height = maxHeight;
+  const width = Math.round(height * sourceRatio);
+  return {
+    x: Math.floor((maxWidth - width) / 2),
+    y: 0,
+    width,
+    height
+  };
 }
 

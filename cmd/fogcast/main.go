@@ -12,7 +12,13 @@ import (
 
 func main() {
 	cfg := config.Load()
-	manager := session.NewManager()
+
+	activeMap, err := session.LoadActiveMap(cfg.DataDir)
+	if err != nil {
+		log.Printf("warning: could not load persisted state: %v", err)
+	}
+
+	manager := session.NewManager(activeMap)
 
 	server := &http.Server{
 		Addr:              cfg.Addr,
