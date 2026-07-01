@@ -47,6 +47,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/", s.handleRoot)
 	s.mux.HandleFunc("/api/state", s.handleState)
 	s.mux.HandleFunc("/api/player/state", s.handlePlayerState)
+	s.mux.HandleFunc("/api/player/view", s.handlePlayerView)
 	s.mux.HandleFunc("/api/map", s.handleMapUpload)
 	s.mux.HandleFunc("/api/push", s.handlePushUpdate)
 	s.mux.HandleFunc("/ws/dm", s.handleDMWS)
@@ -99,6 +100,43 @@ func (s *Server) handlePlayerState(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(state); err != nil {
 		http.Error(w, "encode player state", http.StatusInternalServerError)
 	}
+}
+
+type playerViewUpdateRequest struct {
+	Scale   float64 `json:"scale"`
+	OffsetX int     `json:"offsetX"`
+	OffsetY int     `json:"offsetY"`
+}
+
+func (s *Server) handlePlayerView(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+
+	var req playerViewUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid player view payload", http.StatusBadRequest)
+		return
+	}
+
+	if req.Scale < 1 || req.Scale > 3 {
+		http.Error(w, "player view scale must be between 1 and 3", http.StatusBadRequest)
+		return
+	}
+
+	if req.OffsetX < -2000 || req.OffsetX > 2000 || req.OffsetY < -2000 || req.OffsetY > 2000 {
+		http.Error(w, "player view offset out of range", http.StatusBadRequest)
+		return
+	}
+
+	s.session.SetPlayerView(session.PlayerViewState{
+		Scale:   req.Scale,
+		OffsetX: req.OffsetX,
+		OffsetY: req.OffsetY,
+	})
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleMapUpload(w http.ResponseWriter, r *http.Request) {

@@ -12,6 +12,11 @@ type ServerState = {
     width: number;
     height: number;
   };
+  playerView: {
+    scale: number;
+    offsetX: number;
+    offsetY: number;
+  };
   serverVersion: string;
 };
 
@@ -96,6 +101,9 @@ const initialMask = new Uint8Array(MASK_WIDTH * MASK_HEIGHT);
 let latestMask = initialMask;
 let mapImage: HTMLImageElement | null = null;
 let activeMapID = '';
+let playerViewScale = 1;
+let playerViewOffsetX = 0;
+let playerViewOffsetY = 0;
 let refreshing = false;
 let socket: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof window.setTimeout> | null = null;
@@ -197,6 +205,9 @@ async function loadState() {
   }
 
   const state = (await response.json()) as ServerState;
+  playerViewScale = state.playerView?.scale ?? 1;
+  playerViewOffsetX = state.playerView?.offsetX ?? 0;
+  playerViewOffsetY = state.playerView?.offsetY ?? 0;
 
   if (!state.activeMap) {
     mapImage = null;
@@ -207,6 +218,7 @@ async function loadState() {
   }
 
   if (state.activeMap.id === activeMapID && mapImage) {
+    render();
     status.textContent = `Ready: ${state.activeMap.name}`;
     return;
   }
@@ -238,10 +250,15 @@ function render() {
   const mapHeight = mapImage?.height ?? 1;
   const frame = contain(mapWidth, mapHeight, canvas.width, canvas.height);
 
-  const scaleX = Math.max(frame.width / canvas.width, 0.0001);
-  const scaleY = Math.max(frame.height / canvas.height, 0.0001);
-  const offsetX = frame.x / canvas.width;
-  const offsetY = frame.y / canvas.height;
+  const scaledWidth = frame.width * playerViewScale;
+  const scaledHeight = frame.height * playerViewScale;
+  const viewX = frame.x + playerViewOffsetX - (scaledWidth - frame.width) / 2;
+  const viewY = frame.y + playerViewOffsetY - (scaledHeight - frame.height) / 2;
+
+  const scaleX = Math.max(scaledWidth / canvas.width, 0.0001);
+  const scaleY = Math.max(scaledHeight / canvas.height, 0.0001);
+  const offsetX = viewX / canvas.width;
+  const offsetY = viewY / canvas.height;
 
   gl.useProgram(program);
 

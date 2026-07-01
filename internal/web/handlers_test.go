@@ -40,6 +40,45 @@ func TestStateEndpoint(t *testing.T) {
 	if state.Mask.Width != 512 || state.Mask.Height != 512 {
 		t.Fatalf("expected default 512x512 mask, got %dx%d", state.Mask.Width, state.Mask.Height)
 	}
+
+	if state.PlayerView.Scale != 1 || state.PlayerView.OffsetX != 0 || state.PlayerView.OffsetY != 0 {
+		t.Fatalf("expected default player view, got %+v", state.PlayerView)
+	}
+}
+
+func TestPlayerViewEndpointUpdatesState(t *testing.T) {
+	server := NewServer(config.Config{StaticDir: "static"}, session.NewManager(nil))
+
+	body := strings.NewReader(`{"scale":1.7,"offsetX":120,"offsetY":-48}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/player/view", body)
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(res, req)
+
+	if res.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d", http.StatusNoContent, res.Code)
+	}
+
+	playerState := getState(t, server, "/api/player/state")
+	if playerState.PlayerView.Scale != 1.7 || playerState.PlayerView.OffsetX != 120 || playerState.PlayerView.OffsetY != -48 {
+		t.Fatalf("expected updated player view in state, got %+v", playerState.PlayerView)
+	}
+}
+
+func TestPlayerViewEndpointRejectsInvalidScale(t *testing.T) {
+	server := NewServer(config.Config{StaticDir: "static"}, session.NewManager(nil))
+
+	body := strings.NewReader(`{"scale":0.2,"offsetX":0,"offsetY":0}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/player/view", body)
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(res, req)
+
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, res.Code)
+	}
 }
 
 func TestRootEndpoint(t *testing.T) {

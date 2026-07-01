@@ -119,6 +119,18 @@ button:disabled {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.arrow-row {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.arrow-button {
+  min-width: 2rem;
+  padding: 0.35rem 0.45rem;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
 input[type="file"],
 input[type="range"] {
   width: 100%;
@@ -141,6 +153,11 @@ input[type="range"] {
 .stage-panel {
   display: grid;
   gap: 0.65rem;
+}
+
+.player-controls {
+  display: grid;
+  gap: 0.5rem;
 }
 
 .stage-header {

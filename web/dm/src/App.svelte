@@ -13,15 +13,22 @@
       width: number;
       height: number;
     };
+    playerView: {
+      scale: number;
+      offsetX: number;
+      offsetY: number;
+    };
     serverVersion: string;
   };
 
   type Tool = 'brush' | 'rectangle';
   type PaintMode = 'reveal' | 'shroud';
   type ControlsTab = 'map' | 'state';
+  type StageTab = 'dm' | 'player';
 
   const MASK_WIDTH = 512;
   const MASK_HEIGHT = 512;
+  const MAX_DM_FOG_ALPHA = 170;
 
   let status = $state(null as ServerState | null);
   let error = $state('');
@@ -39,8 +46,12 @@
   let autoSync = $state(true);
   let hasPendingPush = $state(false);
   let controlsTab = $state('map' as ControlsTab);
+  let stageTab = $state('dm' as StageTab);
   let showDirectionControls = $state(false);
   let autoShroudAll = $state(true);
+  let playerViewScale = $state(1);
+  let playerViewOffsetX = $state(0);
+  let playerViewOffsetY = $state(0);
 
   let stageEl: HTMLDivElement | null = null;
   let overlayCanvas: HTMLCanvasElement | null = null;
@@ -202,6 +213,9 @@
 
       status = await response.json();
       mapImageUrl = status?.activeMap?.url ?? '';
+      playerViewScale = status?.playerView?.scale ?? 1;
+      playerViewOffsetX = status?.playerView?.offsetX ?? 0;
+      playerViewOffsetY = status?.playerView?.offsetY ?? 0;
       info = 'Server state refreshed.';
     } catch {
       error = 'Unable to reach server state endpoint.';
@@ -243,7 +257,7 @@
       overlayBuffer[pixel] = 15;
       overlayBuffer[pixel + 1] = 20;
       overlayBuffer[pixel + 2] = 31;
-      overlayBuffer[pixel + 3] = 255 - maskValue;
+      overlayBuffer[pixel + 3] = Math.round(((255 - maskValue) / 255) * MAX_DM_FOG_ALPHA);
     }
 
     const image = new ImageData(overlayBuffer, MASK_WIDTH, MASK_HEIGHT);
@@ -480,6 +494,47 @@
     window.open('/player', '_blank', 'noopener,noreferrer');
   }
 
+  async function syncPlayerView() {
+    clearMessage();
+
+    try {
+      const response = await fetch('/api/player/view', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          scale: playerViewScale,
+          offsetX: Math.round(playerViewOffsetX),
+          offsetY: Math.round(playerViewOffsetY)
+        })
+      });
+
+      if (!response.ok) {
+        const message = await response.text();
+        error = message || `Player view update failed with ${response.status}.`;
+        return;
+      }
+
+      info = 'Player view updated.';
+    } catch {
+      error = 'Unable to sync player view.';
+    }
+  }
+
+  function nudgePlayerView(dx: number, dy: number) {
+    playerViewOffsetX += dx;
+    playerViewOffsetY += dy;
+    void syncPlayerView();
+  }
+
+  function resetPlayerView() {
+    playerViewScale = 1;
+    playerViewOffsetX = 0;
+    playerViewOffsetY = 0;
+    void syncPlayerView();
+  }
+
   function onFileSelected(event: Event) {
     const target = event.currentTarget as HTMLInputElement;
     const file = target.files?.[0] ?? null;
@@ -612,13 +667,11 @@
           bind:value={viewScale}
         />
         {#if showDirectionControls}
-          <div class="button-row pan-row">
-            <button type="button" onclick={() => nudgePan(-40, 0)}>Left</button>
-            <button type="button" onclick={() => nudgePan(40, 0)}>Right</button>
-          </div>
-          <div class="button-row pan-row">
-            <button type="button" onclick={() => nudgePan(0, -40)}>Up</button>
-            <button type="button" onclick={() => nudgePan(0, 40)}>Down</button>
+          <div class="arrow-row">
+            <button type="button" class="arrow-button" aria-label="Pan left" onclick={() => nudgePan(-40, 0)}>&larr;</button>
+            <button type="button" class="arrow-button" aria-label="Pan up" onclick={() => nudgePan(0, -40)}>&uarr;</button>
+            <button type="button" class="arrow-button" aria-label="Pan down" onclick={() => nudgePan(0, 40)}>&darr;</button>
+            <button type="button" class="arrow-button" aria-label="Pan right" onclick={() => nudgePan(40, 0)}>&rarr;</button>
           </div>
         {/if}
         <button type="button" onclick={resetView}>Reset view</button>
@@ -695,14 +748,60 @@
     </section>
 
     <section class="panel stage-panel">
-      <div class="stage-header">
-        <h2>DM View</h2>
-        <button type="button" onclick={openPlayerView}>Open Player View</button>
+      <div class="tab-row" role="tablist" aria-label="Stage tabs">
+        <button
+          type="button"
+          role="tab"
+          class:active={stageTab === 'dm'}
+          aria-selected={stageTab === 'dm'}
+          onclick={() => (stageTab = 'dm')}
+        >
+          DM View
+        </button>
+        <button
+          type="button"
+          role="tab"
+          class:active={stageTab === 'player'}
+          aria-selected={stageTab === 'player'}
+          onclick={() => (stageTab = 'player')}
+        >
+          Player View
+        </button>
       </div>
+
+      <div class="stage-header">
+        <h2>{stageTab === 'dm' ? 'DM View' : 'Player View'}</h2>
+        <button type="button" onclick={openPlayerView}>Open Player Site</button>
+      </div>
+
+      {#if stageTab === 'player'}
+        <div class="player-controls">
+          <label class="label" for="player-zoom-level">Player zoom: {playerViewScale.toFixed(1)}x</label>
+          <input
+            id="player-zoom-level"
+            type="range"
+            min="1"
+            max="3"
+            step="0.1"
+            bind:value={playerViewScale}
+            onchange={() => void syncPlayerView()}
+          />
+          <div class="arrow-row">
+            <button type="button" class="arrow-button" aria-label="Player pan left" onclick={() => nudgePlayerView(-40, 0)}>&larr;</button>
+            <button type="button" class="arrow-button" aria-label="Player pan up" onclick={() => nudgePlayerView(0, -40)}>&uarr;</button>
+            <button type="button" class="arrow-button" aria-label="Player pan down" onclick={() => nudgePlayerView(0, 40)}>&darr;</button>
+            <button type="button" class="arrow-button" aria-label="Player pan right" onclick={() => nudgePlayerView(40, 0)}>&rarr;</button>
+          </div>
+          <button type="button" onclick={resetPlayerView}>Reset player view</button>
+        </div>
+      {/if}
+
       <div class="stage" bind:this={stageEl}>
         <div
           class="viewport"
-          style={`transform: translate(${viewOffsetX}px, ${viewOffsetY}px) scale(${viewScale});`}
+          style={stageTab === 'dm'
+            ? `transform: translate(${viewOffsetX}px, ${viewOffsetY}px) scale(${viewScale});`
+            : `transform: translate(${playerViewOffsetX}px, ${playerViewOffsetY}px) scale(${playerViewScale});`}
         >
           {#if mapImageUrl}
             <img class="map" src={mapImageUrl} alt="Active map" draggable="false" />
@@ -717,10 +816,17 @@
             onpointermove={onStagePointerMove}
             onpointerup={onStagePointerUp}
             onpointercancel={onStagePointerUp}
+            style={stageTab === 'player' ? 'pointer-events: none;' : ''}
           ></canvas>
         </div>
       </div>
-      <p class="hint">Brush paints continuously. Rectangle applies on pointer release. Enable pan mode to drag the view.</p>
+      <p class="hint">
+        {#if stageTab === 'dm'}
+          Brush paints continuously. Rectangle applies on pointer release. Enable pan mode to drag the view.
+        {:else}
+          Player View controls what players see on the player site.
+        {/if}
+      </p>
     </section>
   </div>
 </main>

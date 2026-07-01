@@ -11,9 +11,16 @@ type Manager struct {
 }
 
 type State struct {
-	ActiveMap     *MapState `json:"activeMap"`
-	Mask          MaskState `json:"mask"`
-	ServerVersion string    `json:"serverVersion"`
+	ActiveMap     *MapState       `json:"activeMap"`
+	PlayerView    PlayerViewState `json:"playerView"`
+	Mask          MaskState       `json:"mask"`
+	ServerVersion string          `json:"serverVersion"`
+}
+
+type PlayerViewState struct {
+	Scale   float64 `json:"scale"`
+	OffsetX int     `json:"offsetX"`
+	OffsetY int     `json:"offsetY"`
 }
 
 type MapState struct {
@@ -35,6 +42,11 @@ func NewManager(initialMap *MapState) *Manager {
 	return &Manager{
 		state: State{
 			ActiveMap: cloneMapState(initialMap),
+			PlayerView: PlayerViewState{
+				Scale:   1,
+				OffsetX: 0,
+				OffsetY: 0,
+			},
 			Mask: MaskState{
 				Width:  512,
 				Height: 512,
@@ -57,6 +69,13 @@ func (m *Manager) SetActiveMap(activeMap *MapState) {
 	defer m.mu.Unlock()
 
 	m.state.ActiveMap = cloneMapState(activeMap)
+}
+
+func (m *Manager) SetPlayerView(view PlayerViewState) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.state.PlayerView = view
 }
 
 func (m *Manager) MaskCopy() []byte {
