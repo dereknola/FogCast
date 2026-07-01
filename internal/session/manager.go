@@ -80,6 +80,13 @@ func (m *Manager) SetMask(mask []byte) bool {
 	return true
 }
 
+func (m *Manager) MaskLength() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	return len(m.mask)
+}
+
 func (m *Manager) RevealAll() []byte {
 	m.mu.Lock()
 	defer m.mu.Unlock()

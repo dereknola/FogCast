@@ -54,6 +54,18 @@ p {
   gap: 0.8rem;
 }
 
+.tab-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.tab-row button.active {
+  text-decoration-line: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.2em;
+}
+
 .label {
   display: block;
   color: #bdd0d8;
@@ -64,6 +76,7 @@ p {
 dl {
   display: grid;
   gap: 0.55rem;
+  margin: 0;
 }
 
 dt {
@@ -102,6 +115,10 @@ button:disabled {
   gap: 0.5rem;
 }
 
+.pan-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 input[type="file"],
 input[type="range"] {
   width: 100%;
@@ -126,6 +143,17 @@ input[type="range"] {
   gap: 0.65rem;
 }
 
+.stage-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.stage-header h2 {
+  margin: 0;
+}
+
 .stage {
   position: relative;
   min-height: min(62vh, 36rem);
@@ -140,6 +168,12 @@ input[type="range"] {
     #121d22;
   background-size: 22px 22px;
   background-position: 0 0, 0 11px, 11px -11px, -11px 0;
+}
+
+.viewport {
+  position: absolute;
+  inset: 0;
+  transform-origin: center center;
 }
 
 .map {

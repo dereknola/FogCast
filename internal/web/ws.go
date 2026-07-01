@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dereknola/FogCast/internal/session"
 	"github.com/gorilla/websocket"
 )
 
@@ -109,6 +110,13 @@ func (s *Server) handleDMWS(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
+	initialMask := s.session.MaskCopy()
+	if err := conn.SetWriteDeadline(time.Now().Add(wsWriteTimeout)); err == nil {
+		if err := conn.WriteMessage(websocket.BinaryMessage, initialMask); err != nil {
+			return
+		}
+	}
+
 	for {
 		messageType, payload, err := conn.ReadMessage()
 		if err != nil {
@@ -120,6 +128,7 @@ func (s *Server) handleDMWS(w http.ResponseWriter, r *http.Request) {
 			if ok := s.session.SetMask(payload); !ok {
 				continue
 			}
+			_ = session.SaveMask(s.cfg.DataDir, payload)
 			s.hub.broadcast(payload)
 		case websocket.TextMessage:
 			var msg dmControlMessage
@@ -130,9 +139,11 @@ func (s *Server) handleDMWS(w http.ResponseWriter, r *http.Request) {
 			switch msg.Type {
 			case "reveal_all":
 				mask := s.session.RevealAll()
+				_ = session.SaveMask(s.cfg.DataDir, mask)
 				s.hub.broadcast(mask)
 			case "shroud_all":
 				mask := s.session.ShroudAll()
+				_ = session.SaveMask(s.cfg.DataDir, mask)
 				s.hub.broadcast(mask)
 			}
 		}

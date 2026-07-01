@@ -4,6 +4,10 @@
         "/^npm --prefix web/dm run build && npm --prefix web/player run build$/": {
             "approve": true,
             "matchCommandLine": true
+        },
+        "/^npm --prefix web/dm run build$/": {
+            "approve": true,
+            "matchCommandLine": true
         }
     }
 }

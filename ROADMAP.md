@@ -26,7 +26,7 @@
 - Broadcast full mask updates to connected players.
 - Render map plus mask in the player WebGL client.
 
-#### Milestone 4: DM editing tools
+#### Milestone 4 (COMPLETED): DM editing tools
 
 - Implement brush reveal/shroud GUI.
 - Implement brush size controls GUI.
@@ -36,10 +36,11 @@
 
 #### Milestone 5: performance pass
 
+- Add ENV VAR control for mask size.
 - Add dirty-rectangle mask patches.
 - Reduce player allocations during socket updates and rendering.
 - Add reconnect/state recovery.
-- Test on a low-memory Android TV browser target.
+- Add test that validates player-view has low memory requirements and good performance for low-end devices.
 - Add clear limits and error messages for unsupported maps/devices.
 
 #### Milestone 6: Docker image and GHCR release

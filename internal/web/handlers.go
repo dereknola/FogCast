@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/dereknola/FogCast/internal/assets"
 	"github.com/dereknola/FogCast/internal/config"
@@ -20,14 +21,18 @@ type Server struct {
 	session *session.Manager
 	mux     *http.ServeMux
 	hub     *maskHub
+
+	publishedMu  sync.RWMutex
+	publishedMap *session.MapState
 }
 
 func NewServer(cfg config.Config, manager *session.Manager) *Server {
 	server := &Server{
-		cfg:     cfg,
-		session: manager,
-		mux:     http.NewServeMux(),
-		hub:     newMaskHub(),
+		cfg:          cfg,
+		session:      manager,
+		mux:          http.NewServeMux(),
+		hub:          newMaskHub(),
+		publishedMap: cloneMapState(manager.State().ActiveMap),
 	}
 	server.routes()
 
@@ -41,7 +46,9 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) routes() {
 	s.mux.HandleFunc("/", s.handleRoot)
 	s.mux.HandleFunc("/api/state", s.handleState)
+	s.mux.HandleFunc("/api/player/state", s.handlePlayerState)
 	s.mux.HandleFunc("/api/map", s.handleMapUpload)
+	s.mux.HandleFunc("/api/push", s.handlePushUpdate)
 	s.mux.HandleFunc("/ws/dm", s.handleDMWS)
 	s.mux.HandleFunc("/ws/player", s.handlePlayerWS)
 	s.mux.HandleFunc("/assets/maps/", s.handleMapAsset)
@@ -79,6 +86,21 @@ func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) handlePlayerState(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+
+	state := s.session.State()
+	state.ActiveMap = cloneMapState(s.getPublishedMap())
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(state); err != nil {
+		http.Error(w, "encode player state", http.StatusInternalServerError)
+	}
+}
+
 func (s *Server) handleMapUpload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w, http.MethodPost)
@@ -111,6 +133,9 @@ func (s *Server) handleMapUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	autoShroudAll := parseAutoShroudAll(r.FormValue("autoShroudAll"))
+	autoSync := parseAutoSync(r.FormValue("autoSync"))
+
 	previous := s.session.State().ActiveMap
 
 	activeMap := &session.MapState{
@@ -127,7 +152,22 @@ func (s *Server) handleMapUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if previous != nil && previous.ID != activeMap.ID {
+	if autoSync {
+		s.setPublishedMap(activeMap)
+	}
+
+	if autoShroudAll {
+		mask := s.session.ShroudAll()
+		if err := session.SaveMask(s.cfg.DataDir, mask); err != nil {
+			http.Error(w, "failed to persist mask", http.StatusInternalServerError)
+			return
+		}
+		if autoSync {
+			s.hub.broadcast(mask)
+		}
+	}
+
+	if previous != nil && previous.ID != activeMap.ID && !mapMatches(previous, s.getPublishedMap()) {
 		_ = os.Remove(filepath.Join(s.cfg.DataDir, "maps", previous.ID+".webp"))
 	}
 
@@ -136,6 +176,30 @@ func (s *Server) handleMapUpload(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(activeMap); err != nil {
 		http.Error(w, "encode map response", http.StatusInternalServerError)
 	}
+}
+
+func (s *Server) handlePushUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+
+	active := s.session.State().ActiveMap
+	if active == nil {
+		http.Error(w, "no active map to push", http.StatusBadRequest)
+		return
+	}
+
+	previousPublished := s.getPublishedMap()
+	s.setPublishedMap(active)
+
+	if previousPublished != nil && previousPublished.ID != active.ID {
+		_ = os.Remove(filepath.Join(s.cfg.DataDir, "maps", previousPublished.ID+".webp"))
+	}
+
+	s.hub.broadcast(s.session.MaskCopy())
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleMapAsset(w http.ResponseWriter, r *http.Request) {
@@ -151,7 +215,10 @@ func (s *Server) handleMapAsset(w http.ResponseWriter, r *http.Request) {
 	}
 
 	activeMap := s.session.State().ActiveMap
-	if activeMap == nil || fileName != activeMap.ID+".webp" {
+	publishedMap := s.getPublishedMap()
+	isCurrentAsset := (activeMap != nil && fileName == activeMap.ID+".webp") ||
+		(publishedMap != nil && fileName == publishedMap.ID+".webp")
+	if !isCurrentAsset {
 		http.NotFound(w, r)
 		return
 	}
@@ -193,6 +260,63 @@ func (s *Server) staticHandler(app string) http.Handler {
 func methodNotAllowed(w http.ResponseWriter, allowed string) {
 	w.Header().Set("Allow", allowed)
 	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+}
+
+func parseAutoShroudAll(value string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	if normalized == "" {
+		return true
+	}
+
+	switch normalized {
+	case "0", "false", "off", "no", "n":
+		return false
+	default:
+		return true
+	}
+}
+
+func parseAutoSync(value string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	if normalized == "" {
+		return true
+	}
+
+	switch normalized {
+	case "0", "false", "off", "no", "n":
+		return false
+	default:
+		return true
+	}
+}
+
+func (s *Server) getPublishedMap() *session.MapState {
+	s.publishedMu.RLock()
+	defer s.publishedMu.RUnlock()
+	return cloneMapState(s.publishedMap)
+}
+
+func (s *Server) setPublishedMap(activeMap *session.MapState) {
+	s.publishedMu.Lock()
+	defer s.publishedMu.Unlock()
+	s.publishedMap = cloneMapState(activeMap)
+}
+
+func cloneMapState(input *session.MapState) *session.MapState {
+	if input == nil {
+		return nil
+	}
+
+	copy := *input
+	return &copy
+}
+
+func mapMatches(a, b *session.MapState) bool {
+	if a == nil || b == nil {
+		return false
+	}
+
+	return a.ID == b.ID
 }
 
 var landingTemplate = template.Must(template.New("landing").Parse(`<!doctype html>

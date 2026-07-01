@@ -18,6 +18,7 @@
 
   type Tool = 'brush' | 'rectangle';
   type PaintMode = 'reveal' | 'shroud';
+  type ControlsTab = 'map' | 'state';
 
   const MASK_WIDTH = 512;
   const MASK_HEIGHT = 512;
@@ -31,6 +32,15 @@
   let mode = $state('reveal' as PaintMode);
   let brushSize = $state(36);
   let mapImageUrl = $state('');
+  let panMode = $state(false);
+  let viewScale = $state(1);
+  let viewOffsetX = $state(0);
+  let viewOffsetY = $state(0);
+  let autoSync = $state(true);
+  let hasPendingPush = $state(false);
+  let controlsTab = $state('map' as ControlsTab);
+  let showDirectionControls = $state(false);
+  let autoShroudAll = $state(true);
 
   let stageEl: HTMLDivElement | null = null;
   let overlayCanvas: HTMLCanvasElement | null = null;
@@ -39,7 +49,8 @@
   let activePointerId: number | null = null;
   let rectStart: { x: number; y: number } | null = null;
   let rectPreview: { x0: number; y0: number; x1: number; y1: number } | null = null;
-  let previewObjectUrl = '';
+  let panStart: { x: number; y: number } | null = null;
+  let panOrigin: { x: number; y: number } | null = null;
   let socket: WebSocket | null = null;
   let reconnectTimer: ReturnType<typeof window.setTimeout> | null = null;
 
@@ -76,9 +87,6 @@
         window.clearTimeout(reconnectTimer);
       }
       socket?.close();
-      if (previewObjectUrl) {
-        URL.revokeObjectURL(previewObjectUrl);
-      }
     };
   });
 
@@ -124,6 +132,53 @@
     }
 
     socket.send(mask.slice());
+  }
+
+  function stageOrSyncMaskUpdate() {
+    if (autoSync) {
+      sendMaskUpdate();
+      hasPendingPush = false;
+      info = 'Mask synced to connected players.';
+      return;
+    }
+
+    hasPendingPush = true;
+    info = 'Mask changes staged. Press Push Update to send to players.';
+  }
+
+  async function pushUpdate() {
+    clearMessage();
+
+    try {
+      const response = await fetch('/api/push', { method: 'POST' });
+      if (!response.ok) {
+        const message = await response.text();
+        error = message || `Push update failed with ${response.status}.`;
+        return;
+      }
+
+      sendMaskUpdate();
+      hasPendingPush = false;
+      info = 'Manual push sent to connected players.';
+    } catch {
+      error = 'Manual push failed. Check that the server is running.';
+    }
+  }
+
+  function setAutoSync(enabled: boolean) {
+    if (autoSync === enabled) {
+      return;
+    }
+
+    autoSync = enabled;
+    if (autoSync && hasPendingPush) {
+      void pushUpdate();
+      return;
+    }
+
+    info = autoSync
+      ? 'Auto-Sync enabled. New edits will be sent immediately.'
+      : 'Manual Push enabled. New edits are staged until pushed.';
   }
 
   function sendControl(type: 'reveal_all' | 'shroud_all') {
@@ -225,6 +280,17 @@
     ctx.restore();
   }
 
+  function nudgePan(dx: number, dy: number) {
+    viewOffsetX += dx;
+    viewOffsetY += dy;
+  }
+
+  function resetView() {
+    viewScale = 1;
+    viewOffsetX = 0;
+    viewOffsetY = 0;
+  }
+
   function normalizePointer(event: PointerEvent) {
     if (!overlayCanvas) {
       return { x: 0, y: 0 };
@@ -305,6 +371,12 @@
     activePointerId = event.pointerId;
     overlayCanvas.setPointerCapture(event.pointerId);
 
+    if (panMode) {
+      panStart = { x: event.clientX, y: event.clientY };
+      panOrigin = { x: viewOffsetX, y: viewOffsetY };
+      return;
+    }
+
     const norm = normalizePointer(event);
     if (tool === 'brush') {
       paintBrush(norm.x, norm.y);
@@ -318,6 +390,12 @@
 
   function onStagePointerMove(event: PointerEvent) {
     if (!isPointerDown || activePointerId !== event.pointerId) {
+      return;
+    }
+
+    if (panMode && panStart && panOrigin) {
+      viewOffsetX = panOrigin.x + (event.clientX - panStart.x);
+      viewOffsetY = panOrigin.y + (event.clientY - panStart.y);
       return;
     }
 
@@ -347,6 +425,13 @@
       overlayCanvas.releasePointerCapture(event.pointerId);
     }
 
+    if (panMode) {
+      panStart = null;
+      panOrigin = null;
+      info = 'View adjusted.';
+      return;
+    }
+
     if (tool === 'rectangle' && rectStart) {
       const norm = normalizePointer(event);
       applyRect(rectStart, norm);
@@ -354,30 +439,45 @@
 
     rectStart = null;
     rectPreview = null;
-    info = 'Mask synced to connected players.';
-    sendMaskUpdate();
+    stageOrSyncMaskUpdate();
     renderOverlay();
   }
 
   function revealAll() {
     mask.fill(255);
     info = 'All cells revealed.';
-    sendControl('reveal_all');
-    sendMaskUpdate();
+    if (autoSync) {
+      sendControl('reveal_all');
+    }
+    stageOrSyncMaskUpdate();
     renderOverlay();
   }
 
   function shroudAll() {
     mask.fill(0);
     info = 'All cells shrouded.';
-    sendControl('shroud_all');
-    sendMaskUpdate();
+    if (autoSync) {
+      sendControl('shroud_all');
+    }
+    stageOrSyncMaskUpdate();
     renderOverlay();
   }
 
   function clearMessage() {
     error = '';
     info = '';
+  }
+
+  function formatSelectedFilename(name: string, maxLength = 44) {
+    if (name.length <= maxLength) {
+      return name;
+    }
+
+    return `${name.slice(0, maxLength - 3)}...`;
+  }
+
+  function openPlayerView() {
+    window.open('/player', '_blank', 'noopener,noreferrer');
   }
 
   function onFileSelected(event: Event) {
@@ -401,13 +501,8 @@
     selectedFile = file;
 
     clearMessage();
-    if (previewObjectUrl) {
-      URL.revokeObjectURL(previewObjectUrl);
-    }
-
-    previewObjectUrl = URL.createObjectURL(file);
-    mapImageUrl = previewObjectUrl;
-    info = `Selected ${file.name}.`;
+    info = `Uploading ${file.name}...`;
+    void uploadMap();
   }
 
   async function uploadMap() {
@@ -422,6 +517,8 @@
     try {
       const formData = new FormData();
       formData.append('map', selectedFile);
+      formData.append('autoShroudAll', autoShroudAll ? 'true' : 'false');
+      formData.append('autoSync', autoSync ? 'true' : 'false');
 
       const response = await fetch('/api/map', {
         method: 'POST',
@@ -435,8 +532,14 @@
       }
 
       selectedFile = null;
-      info = 'Map uploaded successfully.';
       await loadState();
+      if (autoSync) {
+        hasPendingPush = false;
+        info = 'Map uploaded and synced to players.';
+      } else {
+        hasPendingPush = true;
+        info = 'New map staged. Press Push Update to send to players.';
+      }
     } catch {
       error = 'Map upload failed. Check that the server is running.';
     } finally {
@@ -448,66 +551,140 @@
 <main>
   <header class="hero">
     <p class="eyebrow">FogCast DM</p>
-    <h1>Control surface</h1>
     <p>Upload a map, choose your tool, and paint the fog mask. Current edits render locally in the browser.</p>
   </header>
 
   <div class="layout">
     <section class="panel controls">
-      <h2>Map</h2>
-      <label class="label" for="map-file">Image file</label>
-      <input id="map-file" type="file" accept="image/*" onchange={onFileSelected} />
-      {#if selectedFile}
-        <p class="file-meta">Selected: {selectedFile.name} ({Math.max(1, Math.round(selectedFile.size / 1024))} KB)</p>
-      {/if}
-      <button type="button" onclick={uploadMap} disabled={uploading || !selectedFile}>
-        {uploading ? 'Uploading...' : 'Upload map'}
-      </button>
-
-      <h2>Tools</h2>
-      <div class="button-row">
-        <button type="button" class:active={tool === 'brush'} onclick={() => (tool = 'brush')}>Brush</button>
-        <button type="button" class:active={tool === 'rectangle'} onclick={() => (tool = 'rectangle')}>Rectangle</button>
+      <div class="tab-row" role="tablist" aria-label="DM controls tabs">
+        <button
+          type="button"
+          role="tab"
+          class:active={controlsTab === 'map'}
+          aria-selected={controlsTab === 'map'}
+          onclick={() => (controlsTab = 'map')}
+        >
+          Map
+        </button>
+        <button
+          type="button"
+          role="tab"
+          class:active={controlsTab === 'state'}
+          aria-selected={controlsTab === 'state'}
+          onclick={() => (controlsTab = 'state')}
+        >
+          State
+        </button>
       </div>
 
-      <div class="button-row">
-        <button type="button" class:active={mode === 'reveal'} onclick={() => (mode = 'reveal')}>Reveal</button>
-        <button type="button" class:active={mode === 'shroud'} onclick={() => (mode = 'shroud')}>Shroud</button>
-      </div>
+      {#if controlsTab === 'map'}
+        <h2>Map</h2>
+        <label class="label" for="map-file">Image file</label>
+        <input id="map-file" type="file" accept="image/*" onchange={onFileSelected} />
+        {#if selectedFile}
+          <p class="file-meta">
+            Selected: {formatSelectedFilename(selectedFile.name)} ({Math.max(1, Math.round(selectedFile.size / 1024))} KB)
+          </p>
+        {/if}
 
-      <label class="label" for="brush-size">Brush size: {brushSize}px</label>
-      <input
-        id="brush-size"
-        type="range"
-        min="8"
-        max="120"
-        step="2"
-        bind:value={brushSize}
-        disabled={tool !== 'brush'}
-      />
+        <h2>Tools</h2>
+        <div class="button-row">
+          <button type="button" class:active={tool === 'brush'} onclick={() => (tool = 'brush')}>Brush</button>
+          <button type="button" class:active={tool === 'rectangle'} onclick={() => (tool = 'rectangle')}>Rectangle</button>
+        </div>
 
-      <div class="button-row">
-        <button type="button" onclick={revealAll}>Reveal all</button>
-        <button type="button" onclick={shroudAll}>Shroud all</button>
-      </div>
+        <div class="button-row">
+          <button type="button" class:active={mode === 'reveal'} onclick={() => (mode = 'reveal')}>Reveal</button>
+          <button type="button" class:active={mode === 'shroud'} onclick={() => (mode = 'shroud')}>Shroud</button>
+        </div>
 
-      <h2>Server state</h2>
-      {#if status}
-        <dl>
-          <div>
-            <dt>Active map</dt>
-            <dd>{status.activeMap ? status.activeMap.name : 'None loaded'}</dd>
+        <h2>View</h2>
+        <button type="button" class:active={panMode} onclick={() => (panMode = !panMode)}>
+          {panMode ? 'Pan mode: on' : 'Pan mode: off'}
+        </button>
+        <label class="label" for="zoom-level">Zoom: {viewScale.toFixed(1)}x</label>
+        <input
+          id="zoom-level"
+          type="range"
+          min="1"
+          max="3"
+          step="0.1"
+          bind:value={viewScale}
+        />
+        {#if showDirectionControls}
+          <div class="button-row pan-row">
+            <button type="button" onclick={() => nudgePan(-40, 0)}>Left</button>
+            <button type="button" onclick={() => nudgePan(40, 0)}>Right</button>
           </div>
-          <div>
-            <dt>Server version</dt>
-            <dd>{status.serverVersion}</dd>
+          <div class="button-row pan-row">
+            <button type="button" onclick={() => nudgePan(0, -40)}>Up</button>
+            <button type="button" onclick={() => nudgePan(0, 40)}>Down</button>
           </div>
-        </dl>
-      {:else}
-        <p>Loading server state...</p>
+        {/if}
+        <button type="button" onclick={resetView}>Reset view</button>
+
+        <label class="label" for="brush-size">Brush size: {brushSize}px</label>
+        <input
+          id="brush-size"
+          type="range"
+          min="8"
+          max="120"
+          step="2"
+          bind:value={brushSize}
+          disabled={tool !== 'brush'}
+        />
+
+        <div class="button-row">
+          <button type="button" onclick={revealAll}>Reveal all</button>
+          <button type="button" onclick={shroudAll}>Shroud all</button>
+        </div>
+
+        <h2>Refresh mode</h2>
+        <div class="button-row">
+          <button type="button" class:active={autoSync} onclick={() => setAutoSync(true)}>Auto-Sync</button>
+          <button type="button" class:active={!autoSync} onclick={() => setAutoSync(false)}>Manual Push</button>
+        </div>
+        {#if !autoSync}
+          <button type="button" onclick={pushUpdate} disabled={!hasPendingPush}>Push Update</button>
+        {/if}
       {/if}
 
-      <button type="button" onclick={loadState}>Refresh state</button>
+      {#if controlsTab === 'state'}
+        <h2>Server state</h2>
+        {#if status}
+          <dl>
+            <div>
+              <dt>Active map</dt>
+              <dd>{status.activeMap ? status.activeMap.name : 'None loaded'}</dd>
+            </div>
+            <div>
+              <dt>Server version</dt>
+              <dd>{status.serverVersion}</dd>
+            </div>
+          </dl>
+        {:else}
+          <p>Loading server state...</p>
+        {/if}
+
+        <button type="button" onclick={loadState}>Refresh state</button>
+
+        <h2>Display options</h2>
+        <button
+          type="button"
+          class:active={showDirectionControls}
+          onclick={() => (showDirectionControls = !showDirectionControls)}
+        >
+          Show Direction Controls: {showDirectionControls ? 'On' : 'Off'}
+        </button>
+
+        <button
+          type="button"
+          class:active={autoShroudAll}
+          onclick={() => (autoShroudAll = !autoShroudAll)}
+        >
+          Auto Shroud All: {autoShroudAll ? 'On' : 'Off'}
+        </button>
+      {/if}
 
       {#if info}
         <p class="info">{info}</p>
@@ -518,24 +695,32 @@
     </section>
 
     <section class="panel stage-panel">
-      <h2>Map stage</h2>
-      <div class="stage" bind:this={stageEl}>
-        {#if mapImageUrl}
-          <img class="map" src={mapImageUrl} alt="Active map" draggable="false" />
-        {:else}
-          <div class="map fallback">No map loaded yet</div>
-        {/if}
-
-        <canvas
-          bind:this={overlayCanvas}
-          class="overlay"
-          onpointerdown={onStagePointerDown}
-          onpointermove={onStagePointerMove}
-          onpointerup={onStagePointerUp}
-          onpointercancel={onStagePointerUp}
-        ></canvas>
+      <div class="stage-header">
+        <h2>DM View</h2>
+        <button type="button" onclick={openPlayerView}>Open Player View</button>
       </div>
-      <p class="hint">Brush paints continuously. Rectangle applies on pointer release.</p>
+      <div class="stage" bind:this={stageEl}>
+        <div
+          class="viewport"
+          style={`transform: translate(${viewOffsetX}px, ${viewOffsetY}px) scale(${viewScale});`}
+        >
+          {#if mapImageUrl}
+            <img class="map" src={mapImageUrl} alt="Active map" draggable="false" />
+          {:else}
+            <div class="map fallback">No map loaded yet</div>
+          {/if}
+
+          <canvas
+            bind:this={overlayCanvas}
+            class="overlay"
+            onpointerdown={onStagePointerDown}
+            onpointermove={onStagePointerMove}
+            onpointerup={onStagePointerUp}
+            onpointercancel={onStagePointerUp}
+          ></canvas>
+        </div>
+      </div>
+      <p class="hint">Brush paints continuously. Rectangle applies on pointer release. Enable pan mode to drag the view.</p>
     </section>
   </div>
 </main>

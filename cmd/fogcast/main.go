@@ -20,6 +20,13 @@ func main() {
 
 	manager := session.NewManager(activeMap)
 
+	persistedMask, err := session.LoadMask(cfg.DataDir, manager.MaskLength())
+	if err != nil {
+		log.Printf("warning: could not load persisted mask snapshot: %v", err)
+	} else if len(persistedMask) > 0 {
+		_ = manager.SetMask(persistedMask)
+	}
+
 	server := &http.Server{
 		Addr:              cfg.Addr,
 		Handler:           web.NewServer(cfg, manager).Handler(),

@@ -190,7 +190,7 @@ async function refreshState() {
 }
 
 async function loadState() {
-  const response = await fetch('/api/state');
+  const response = await fetch('/api/player/state');
   if (!response.ok) {
     status.textContent = `State request failed with ${response.status}`;
     return;
