@@ -31,3 +31,37 @@ func TestNewManagerWithMaskSizeClampsOutOfRange(t *testing.T) {
 		}
 	})
 }
+
+func TestApplyMaskPatchUpdatesEntireRectangle(t *testing.T) {
+	manager := NewManagerWithMaskSize(nil, 32)
+
+	patch := MaskPatch{
+		X:      5,
+		Y:      7,
+		Width:  7,
+		Height: 5,
+		Data:   make([]byte, 7*5),
+	}
+	for i := range patch.Data {
+		patch.Data[i] = 211
+	}
+
+	if ok := manager.ApplyMaskPatch(patch); !ok {
+		t.Fatalf("expected patch application to succeed")
+	}
+
+	mask := manager.MaskCopy()
+	stride := manager.State().Mask.Width
+	for y := 0; y < manager.State().Mask.Height; y += 1 {
+		for x := 0; x < manager.State().Mask.Width; x += 1 {
+			value := mask[y*stride+x]
+			inside := x >= patch.X && x < patch.X+patch.Width && y >= patch.Y && y < patch.Y+patch.Height
+			if inside && value != 211 {
+				t.Fatalf("expected patched cell (%d,%d) to be 211, got %d", x, y, value)
+			}
+			if !inside && value != 0 {
+				t.Fatalf("expected non-patched cell (%d,%d) to remain 0, got %d", x, y, value)
+			}
+		}
+	}
+}

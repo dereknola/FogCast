@@ -66,6 +66,8 @@
   let socket: WebSocket | null = null;
   let reconnectTimer: ReturnType<typeof window.setTimeout> | null = null;
   let strokeDirtyRect: DirtyRect | null = null;
+  let brushMovedDuringStroke = false;
+  let brushSyncedOnPointerDown = false;
 
   let maskWidth = DEFAULT_MASK_WIDTH;
   let maskHeight = DEFAULT_MASK_HEIGHT;
@@ -534,6 +536,8 @@
     }
 
     strokeDirtyRect = null;
+    brushMovedDuringStroke = false;
+    brushSyncedOnPointerDown = false;
     isPointerDown = true;
     activePointerId = event.pointerId;
     overlayCanvas.setPointerCapture(event.pointerId);
@@ -548,6 +552,11 @@
     if (tool === 'brush') {
       strokeDirtyRect = null;
       paintBrush(norm.x, norm.y);
+
+      if (autoSync && strokeDirtyRect) {
+        stageOrSyncMaskUpdate(strokeDirtyRect);
+        brushSyncedOnPointerDown = true;
+      }
       return;
     }
 
@@ -569,6 +578,7 @@
 
     const norm = normalizePointer(event);
     if (tool === 'brush') {
+      brushMovedDuringStroke = true;
       paintBrush(norm.x, norm.y);
       return;
     }
@@ -614,6 +624,11 @@
     strokeDirtyRect = null;
     rectStart = null;
     rectPreview = null;
+    if (tool === 'brush' && autoSync && brushSyncedOnPointerDown && !brushMovedDuringStroke) {
+      renderOverlay();
+      return;
+    }
+
     stageOrSyncMaskUpdate(dirty);
     renderOverlay();
   }
@@ -962,7 +977,7 @@
           class="viewport"
           style={stageTab === 'dm'
             ? `transform: translate(${viewOffsetX}px, ${viewOffsetY}px) scale(${viewScale});`
-            : `transform: translate(${playerViewOffsetX}px, ${playerViewOffsetY}px) scale(${playerViewScale});`}
+            : `transform: translate(${-playerViewOffsetX}px, ${-playerViewOffsetY}px) scale(${playerViewScale});`}
         >
           {#if mapImageUrl}
             <img class="map" src={mapImageUrl} alt="Active map" draggable="false" />

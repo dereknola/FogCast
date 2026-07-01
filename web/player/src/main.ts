@@ -43,6 +43,10 @@ if (!gl) {
   throw new Error('Missing WebGL context');
 }
 
+// Dirty-rectangle updates may have widths that are not multiples of 4 bytes.
+// Use byte alignment 1 so tex(Sub)Image uploads are not row-corrupted.
+gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+
 const vertexSource = `
 attribute vec2 a_position;
 varying vec2 v_uv;
