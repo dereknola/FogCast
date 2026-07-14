@@ -88,34 +88,17 @@ FogCast ships with a production multi-stage [Dockerfile](Dockerfile) and a GitHu
 
 ### Run published image from GHCR
 
-Replace `<owner>` with your GitHub username or organization:
-
 ```bash
 docker run --name fogcast \
 	-p 8080:8080 \
 	-v fogcast-data:/data \
-	ghcr.io/<owner>/fogcast:latest
+	ghcr.io/dereknola/fogcast:latest
 ```
 
 Open:
 
 - `http://localhost:8080/dm`
 - `http://localhost:8080/player`
-
-### Build and run locally
-
-```bash
-docker build -t fogcast:local .
-docker run --rm -p 8080:8080 -v fogcast-data:/data fogcast:local
-```
-
-### Image tags published by CI
-
-The workflow publishes:
-
-- `latest` (default branch)
-- semantic version tags, e.g. `v1.2.3` and `1.2`
-- commit SHA tags, e.g. `sha-abcdef1`
 
 ### Container configuration
 
