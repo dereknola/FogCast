@@ -42,16 +42,15 @@
 - Add reconnect/state recovery.
 - Add clear limits and error messages for unsupported maps/devices.
 
-#### Milestone 6: Docker image and GHCR release
+#### Milestone 6 (COMPLETED): Docker image and GHCR release
 
 - Add a production multi-stage `Dockerfile`.
 - Add `.dockerignore` to keep image builds small and deterministic.
-- Add `docker-compose.yml` for simple self-hosting with a persistent data volume.
 - Add server configuration defaults that work cleanly in containers.
 - Add a GitHub Actions workflow that builds and publishes images to GHCR.
-- Publish `latest`, semantic version tags, and commit SHA tags.
+- Publish `latest`, semantic version tags.
 - Build and publish `linux/amd64` and `linux/arm64` images.
-- Document self-hosting with Docker, Docker Compose, and persistent storage.
+- Document self-hosting with Docker.
 
 #### Milestone 7: CI validation and quality gates
 

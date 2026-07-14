@@ -49,6 +49,51 @@ To connect from another device on your local network, replace `localhost` with t
 - `http://192.168.1.25:8080/dm`
 - `http://192.168.1.25:8080/player`
 
+## Self-Hosting With Docker
+
+FogCast ships with a production multi-stage [Dockerfile](Dockerfile) and a GitHub Actions workflow that publishes images to GHCR.
+
+### Run published image from GHCR
+
+Replace `<owner>` with your GitHub username or organization:
+
+```bash
+docker run --name fogcast \
+	-p 8080:8080 \
+	-v fogcast-data:/data \
+	ghcr.io/<owner>/fogcast:latest
+```
+
+Open:
+
+- `http://localhost:8080/dm`
+- `http://localhost:8080/player`
+
+### Build and run locally
+
+```bash
+docker build -t fogcast:local .
+docker run --rm -p 8080:8080 -v fogcast-data:/data fogcast:local
+```
+
+### Image tags published by CI
+
+The workflow publishes:
+
+- `latest` (default branch)
+- semantic version tags, e.g. `v1.2.3` and `1.2`
+- commit SHA tags, e.g. `sha-abcdef1`
+
+### Container configuration
+
+These defaults are container-friendly out of the box:
+
+- `FOGCAST_ADDR=:8080`
+- `FOGCAST_DATA_DIR=/data`
+- `FOGCAST_STATIC_DIR=/app/static`
+
+You can override them by passing environment variables to `docker run`.
+
 
 ## AI Usage
 

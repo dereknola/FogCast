@@ -7,6 +7,7 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("FOGCAST_DATA_DIR", "")
 	t.Setenv("FOGCAST_STATIC_DIR", "")
 	t.Setenv("FOGCAST_MAX_UPLOAD_MB", "")
+	t.Setenv("FOGCAST_CONTAINER", "0")
 
 	cfg := Load()
 
@@ -29,6 +30,7 @@ func TestLoadFromEnvironment(t *testing.T) {
 	t.Setenv("FOGCAST_DATA_DIR", "/tmp/fogcast-data")
 	t.Setenv("FOGCAST_STATIC_DIR", "/tmp/fogcast-static")
 	t.Setenv("FOGCAST_MAX_UPLOAD_MB", "64")
+	t.Setenv("FOGCAST_CONTAINER", "0")
 
 	cfg := Load()
 
@@ -43,6 +45,26 @@ func TestLoadFromEnvironment(t *testing.T) {
 	}
 	if cfg.MaxUploadBytes != 64*1024*1024 {
 		t.Fatalf("expected max upload bytes %d, got %d", 64*1024*1024, cfg.MaxUploadBytes)
+	}
+}
+
+func TestLoadContainerDefaults(t *testing.T) {
+	t.Setenv("FOGCAST_ADDR", "")
+	t.Setenv("FOGCAST_DATA_DIR", "")
+	t.Setenv("FOGCAST_STATIC_DIR", "")
+	t.Setenv("FOGCAST_MAX_UPLOAD_MB", "")
+	t.Setenv("FOGCAST_CONTAINER", "1")
+
+	cfg := Load()
+
+	if cfg.Addr != ":8080" {
+		t.Fatalf("expected default addr :8080, got %q", cfg.Addr)
+	}
+	if cfg.DataDir != "/data" {
+		t.Fatalf("expected container data dir /data, got %q", cfg.DataDir)
+	}
+	if cfg.StaticDir != "/app/static" {
+		t.Fatalf("expected container static dir /app/static, got %q", cfg.StaticDir)
 	}
 }
 
