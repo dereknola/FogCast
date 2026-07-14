@@ -38,7 +38,6 @@ COPY --from=web-player --chown=65532:65532 /src/static/player/ /app/static/playe
 ENV FOGCAST_ADDR=:8080
 ENV FOGCAST_DATA_DIR=/data
 ENV FOGCAST_STATIC_DIR=/app/static
-ENV FOGCAST_CONTAINER=1
 
 VOLUME ["/data"]
 EXPOSE 8080
