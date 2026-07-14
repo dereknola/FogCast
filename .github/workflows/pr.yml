@@ -3,12 +3,13 @@ name: Build validation
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  build:
+  unit-tests:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -22,5 +23,88 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      - name: Build
-        run: go build ./...
+      - name: Unit tests
+        run: go test ./...
+
+  container-smoke-test:
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build test image
+        run: docker build -t fogcast:ci-smoke .
+
+      - name: Run smoke test
+        run: |
+          set -euo pipefail
+          cid=""
+          cleanup() {
+            if [[ -n "$cid" ]]; then
+              docker rm -f "$cid" >/dev/null 2>&1 || true
+            fi
+          }
+          trap cleanup EXIT
+
+          cid=$(docker run -d -p 18080:8080 fogcast:ci-smoke)
+
+          ready=0
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:18080/api/state >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+
+          if [[ "$ready" -ne 1 ]]; then
+            echo "Smoke test failed: /api/state never became ready"
+            docker logs "$cid" || true
+            exit 1
+          fi
+
+          curl -fsS http://127.0.0.1:18080/api/state >/dev/null
+
+  player-e2e-memory-test:
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build frontend and binary
+        run: bash ./scripts/build.sh
+
+      - name: Install E2E dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run player E2E memory gate
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          npm run test:e2e:memory
+          cat artifacts/e2e-player-memory-summary.json
+
+      - name: Upload E2E artifacts
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: player-e2e-memory
+          path: |
+            artifacts/e2e-player-memory-summary.json
+            playwright-report
+            test-results
