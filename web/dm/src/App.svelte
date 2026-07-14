@@ -92,6 +92,13 @@
     height: number;
   };
 
+  type MapFrame = {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+
   onMount(() => {
     void loadState();
     connectSocket();
@@ -389,9 +396,11 @@
 
     scratchCtx.putImageData(image, 0, 0);
 
+    const frame = getMapFrame();
+
     ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
     ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(scratchCanvas, 0, 0, overlayCanvas.width, overlayCanvas.height);
+    ctx.drawImage(scratchCanvas, frame.x, frame.y, frame.width, frame.height);
 
     if (rectPreview) {
       drawRectPreview(ctx, rectPreview);
@@ -402,10 +411,11 @@
     ctx: CanvasRenderingContext2D,
     preview: { x0: number; y0: number; x1: number; y1: number }
   ) {
-    const x = Math.min(preview.x0, preview.x1) * overlayCanvas!.width;
-    const y = Math.min(preview.y0, preview.y1) * overlayCanvas!.height;
-    const w = Math.abs(preview.x1 - preview.x0) * overlayCanvas!.width;
-    const h = Math.abs(preview.y1 - preview.y0) * overlayCanvas!.height;
+    const frame = getMapFrame();
+    const x = frame.x + Math.min(preview.x0, preview.x1) * frame.width;
+    const y = frame.y + Math.min(preview.y0, preview.y1) * frame.height;
+    const w = Math.abs(preview.x1 - preview.x0) * frame.width;
+    const h = Math.abs(preview.y1 - preview.y0) * frame.height;
 
     ctx.save();
     ctx.strokeStyle = mode === 'reveal' ? '#63d471' : '#ff6b6b';
@@ -428,14 +438,65 @@
 
   function normalizePointer(event: PointerEvent) {
     if (!overlayCanvas) {
-      return { x: 0, y: 0 };
+      return { x: 0, y: 0, inside: false };
     }
 
     const bounds = overlayCanvas.getBoundingClientRect();
-    const x = clamp((event.clientX - bounds.left) / bounds.width, 0, 1);
-    const y = clamp((event.clientY - bounds.top) / bounds.height, 0, 1);
+    const frame = getMapFrame();
 
-    return { x, y };
+    const canvasX = ((event.clientX - bounds.left) / bounds.width) * overlayCanvas.width;
+    const canvasY = ((event.clientY - bounds.top) / bounds.height) * overlayCanvas.height;
+
+    const rawX = (canvasX - frame.x) / frame.width;
+    const rawY = (canvasY - frame.y) / frame.height;
+    const inside = rawX >= 0 && rawX <= 1 && rawY >= 0 && rawY <= 1;
+
+    const x = clamp(rawX, 0, 1);
+    const y = clamp(rawY, 0, 1);
+
+    return { x, y, inside };
+  }
+
+  function getMapFrame(): MapFrame {
+    if (!overlayCanvas) {
+      return { x: 0, y: 0, width: 1, height: 1 };
+    }
+
+    const maxWidth = overlayCanvas.width;
+    const maxHeight = overlayCanvas.height;
+    const mapWidth = status?.activeMap?.width ?? maxWidth;
+    const mapHeight = status?.activeMap?.height ?? maxHeight;
+
+    return contain(mapWidth, mapHeight, maxWidth, maxHeight);
+  }
+
+  function contain(sourceWidth: number, sourceHeight: number, maxWidth: number, maxHeight: number): MapFrame {
+    if (sourceWidth <= 0 || sourceHeight <= 0 || maxWidth <= 0 || maxHeight <= 0) {
+      return { x: 0, y: 0, width: maxWidth, height: maxHeight };
+    }
+
+    const sourceRatio = sourceWidth / sourceHeight;
+    const maxRatio = maxWidth / maxHeight;
+
+    if (sourceRatio > maxRatio) {
+      const width = maxWidth;
+      const height = Math.round(width / sourceRatio);
+      return {
+        x: 0,
+        y: Math.floor((maxHeight - height) / 2),
+        width,
+        height
+      };
+    }
+
+    const height = maxHeight;
+    const width = Math.round(height * sourceRatio);
+    return {
+      x: Math.floor((maxWidth - width) / 2),
+      y: 0,
+      width,
+      height
+    };
   }
 
   function toMaskPoint(normX: number, normY: number) {
@@ -535,6 +596,11 @@
       return;
     }
 
+    const norm = normalizePointer(event);
+    if (!panMode && !norm.inside) {
+      return;
+    }
+
     strokeDirtyRect = null;
     brushMovedDuringStroke = false;
     brushSyncedOnPointerDown = false;
@@ -548,7 +614,6 @@
       return;
     }
 
-    const norm = normalizePointer(event);
     if (tool === 'brush') {
       strokeDirtyRect = null;
       paintBrush(norm.x, norm.y);
@@ -782,7 +847,7 @@
 <main>
   <header class="hero">
     <p class="eyebrow">FogCast DM</p>
-    <p>Upload a map, choose your tool, and paint the fog mask. Current edits render locally in the browser.</p>
+    <p>Upload a map, choose your tool, and paint the fog mask.</p>
   </header>
 
   <div class="layout">
