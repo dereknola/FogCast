@@ -1,13 +1,13 @@
 # syntax=docker/dockerfile:1.7
 
-FROM node:22-alpine AS web-dm
+FROM node:26-alpine AS web-dm
 WORKDIR /src
 COPY web/dm/package*.json ./web/dm/
 RUN npm --prefix ./web/dm ci
 COPY web/dm/ ./web/dm/
 RUN npm --prefix ./web/dm run build
 
-FROM node:22-alpine AS web-player
+FROM node:26-alpine AS web-player
 WORKDIR /src
 COPY web/player/package*.json ./web/player/
 RUN npm --prefix ./web/player ci
