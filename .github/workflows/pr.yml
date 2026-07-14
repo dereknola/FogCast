@@ -95,16 +95,5 @@ jobs:
       - name: Run player E2E memory gate
         run: |
           set -euo pipefail
-          mkdir -p artifacts
           npm run test:e2e:memory
-          cat artifacts/e2e-player-memory-summary.json
-
-      - name: Upload E2E artifacts
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: player-e2e-memory
-          path: |
-            artifacts/e2e-player-memory-summary.json
-            playwright-report
-            test-results
+          cat test-results/e2e-player-memory-summary.json
