@@ -58,3 +58,10 @@
 - Add a container smoke test job that starts the built image and checks `/api/state`.
 - Add a performance test job that validates player-view low-memory behavior and baseline performance for low-end devices.
 - Enforce pass/fail quality gates for smoke and performance checks before merge/release.
+
+
+#### Milestone 8: Future Work
+
+These are ideas for future work, but are not currently planned or scheduled. They may be implemented in the future if there is interest and time.
+- Store multiple maps and allow switching between them.
+- Add "ping" feature for DM to highlight areas of the map for players.
