@@ -49,6 +49,39 @@ To connect from another device on your local network, replace `localhost` with t
 - `http://192.168.1.25:8080/dm`
 - `http://192.168.1.25:8080/player`
 
+## Testing And CI Quality Gates
+
+FogCast uses a browser E2E memory gate for CI quality checks.
+
+### Browser E2E memory gate (Player view)
+
+This test runs the full player-memory scenario:
+
+- starts the server
+- uploads the large map (Goblin Lair)
+- opens the Player view in Chromium and samples browser memory
+- uploads the small map (Town Neighborhood)
+- samples browser memory again and enforces per-map thresholds
+
+Install dependencies once:
+
+```bash
+npm ci
+npx playwright install chromium
+```
+
+Run the E2E memory test:
+
+```bash
+npm run test:e2e:memory
+```
+
+Threshold env vars:
+
+- `FOGCAST_E2E_GOBLIN_MAX_MB=140`
+- `FOGCAST_E2E_TOWN_MAX_MB=120`
+- `FOGCAST_E2E_SUMMARY_PATH=test-results/e2e-player-memory-summary.json`
+
 ## Self-Hosting With Docker
 
 FogCast ships with a production multi-stage [Dockerfile](Dockerfile) and a GitHub Actions workflow that publishes images to GHCR.
@@ -98,3 +131,16 @@ You can override them by passing environment variables to `docker run`.
 ## AI Usage
 
 This project was designed and implemented with the assistance of AI. Gemini-3.5 was used for initial design and architecture, and ChatGPT-5.3-Codex was used for code generation and refactoring. All code was reviewed and tested by a human developer (me) before being committed to the repository.
+
+## Test Map Attribution (CC BY 4.0)
+
+Some test map assets included in this repository are from Elven Tower Adventures:
+
+- Creator: [Elven Tower Adventures](https://www.patreon.com/cw/elventower)
+- License: Creative Commons Attribution 4.0 International (CC BY 4.0)
+	- https://creativecommons.org/licenses/by/4.0/
+
+These assets are used only for testing and development purposes in FogCast.
+
+
+

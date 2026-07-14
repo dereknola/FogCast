@@ -52,7 +52,7 @@
 - Build and publish `linux/amd64` and `linux/arm64` images.
 - Document self-hosting with Docker.
 
-#### Milestone 7: CI validation and quality gates
+#### Milestone 7 (COMPLETED): CI validation and quality gates
 
 - Add a GitHub Actions workflow that runs on `push` and `workflow_dispatch`.
 - Add a container smoke test job that starts the built image and checks `/api/state`.
