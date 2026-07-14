@@ -33,8 +33,30 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Build test image
-        run: docker build -t fogcast:ci-smoke .
+      - name: Set up Docker (containerd image store)
+        uses: docker/setup-docker-action@v4
+        with:
+          daemon-config: |
+            {
+              "features": {
+                "containerd-snapshotter": true
+              }
+            }
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build amd64 and arm64 test image (load locally)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          tags: fogcast:ci-smoke
+          platforms: linux/amd64,linux/arm64
+          load: true
 
       - name: Run smoke test
         run: |
