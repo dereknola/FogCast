@@ -430,10 +430,40 @@
     viewOffsetY += dy;
   }
 
+  function onActiveViewZoomInput(event: Event) {
+    const target = event.currentTarget as HTMLInputElement;
+    const next = Number(target.value);
+    if (!Number.isFinite(next)) {
+      return;
+    }
+
+    if (stageTab === 'player') {
+      playerViewScale = next;
+      return;
+    }
+
+    viewScale = next;
+  }
+
+  function onActiveViewZoomCommit() {
+    if (stageTab === 'player') {
+      void syncPlayerView();
+    }
+  }
+
   function resetView() {
     viewScale = 1;
     viewOffsetX = 0;
     viewOffsetY = 0;
+  }
+
+  function resetActiveView() {
+    if (stageTab === 'player') {
+      resetPlayerView();
+      return;
+    }
+
+    resetView();
   }
 
   function normalizePointer(event: PointerEvent) {
@@ -596,8 +626,10 @@
       return;
     }
 
+    const isPlayerView = stageTab === 'player';
+    const effectivePanMode = panMode || isPlayerView;
     const norm = normalizePointer(event);
-    if (!panMode && !norm.inside) {
+    if (!effectivePanMode && !norm.inside) {
       return;
     }
 
@@ -608,9 +640,12 @@
     activePointerId = event.pointerId;
     overlayCanvas.setPointerCapture(event.pointerId);
 
-    if (panMode) {
+    if (effectivePanMode) {
       panStart = { x: event.clientX, y: event.clientY };
-      panOrigin = { x: viewOffsetX, y: viewOffsetY };
+      panOrigin = {
+        x: isPlayerView ? playerViewOffsetX : viewOffsetX,
+        y: isPlayerView ? playerViewOffsetY : viewOffsetY
+      };
       return;
     }
 
@@ -635,9 +670,15 @@
       return;
     }
 
-    if (panMode && panStart && panOrigin) {
-      viewOffsetX = panOrigin.x + (event.clientX - panStart.x);
-      viewOffsetY = panOrigin.y + (event.clientY - panStart.y);
+    const isPlayerView = stageTab === 'player';
+    if ((panMode || isPlayerView) && panStart && panOrigin) {
+      if (isPlayerView) {
+        playerViewOffsetX = panOrigin.x + (event.clientX - panStart.x);
+        playerViewOffsetY = panOrigin.y + (event.clientY - panStart.y);
+      } else {
+        viewOffsetX = panOrigin.x + (event.clientX - panStart.x);
+        viewOffsetY = panOrigin.y + (event.clientY - panStart.y);
+      }
       return;
     }
 
@@ -668,10 +709,17 @@
       overlayCanvas.releasePointerCapture(event.pointerId);
     }
 
-    if (panMode) {
+    const isPlayerView = stageTab === 'player';
+    if (panMode || isPlayerView) {
       panStart = null;
       panOrigin = null;
-      info = 'View adjusted.';
+
+      if (isPlayerView) {
+        void syncPlayerView();
+        info = 'Player view adjusted.';
+      } else {
+        info = 'View adjusted.';
+      }
       return;
     }
 
@@ -761,12 +809,6 @@
     } catch {
       error = 'Unable to sync player view.';
     }
-  }
-
-  function nudgePlayerView(dx: number, dy: number) {
-    playerViewOffsetX += dx;
-    playerViewOffsetY += dy;
-    void syncPlayerView();
   }
 
   function resetPlayerView() {
@@ -894,29 +936,6 @@
           <button type="button" class:active={mode === 'shroud'} onclick={() => (mode = 'shroud')}>Shroud</button>
         </div>
 
-        <h2>View</h2>
-        <button type="button" class:active={panMode} onclick={() => (panMode = !panMode)}>
-          {panMode ? 'Pan mode: on' : 'Pan mode: off'}
-        </button>
-        <label class="label" for="zoom-level">Zoom: {viewScale.toFixed(1)}x</label>
-        <input
-          id="zoom-level"
-          type="range"
-          min="1"
-          max="3"
-          step="0.1"
-          bind:value={viewScale}
-        />
-        {#if showDirectionControls}
-          <div class="arrow-row">
-            <button type="button" class="arrow-button" aria-label="Pan left" onclick={() => nudgePan(-40, 0)}>&larr;</button>
-            <button type="button" class="arrow-button" aria-label="Pan up" onclick={() => nudgePan(0, -40)}>&uarr;</button>
-            <button type="button" class="arrow-button" aria-label="Pan down" onclick={() => nudgePan(0, 40)}>&darr;</button>
-            <button type="button" class="arrow-button" aria-label="Pan right" onclick={() => nudgePan(40, 0)}>&rarr;</button>
-          </div>
-        {/if}
-        <button type="button" onclick={resetView}>Reset view</button>
-
         <label class="label" for="brush-size">Brush size: {brushSize}px</label>
         <input
           id="brush-size"
@@ -932,6 +951,40 @@
           <button type="button" onclick={revealAll}>Reveal all</button>
           <button type="button" onclick={shroudAll}>Shroud all</button>
         </div>
+
+        <h2>View</h2>
+        <div class="view-toggle-row">
+          <button
+            type="button"
+            class:active={panMode && stageTab !== 'player'}
+            onclick={() => (panMode = !panMode)}
+            disabled={stageTab === 'player'}
+          >
+            {panMode ? 'Pan mode: on' : 'Pan mode: off'}
+          </button>
+          <button type="button" class="icon-mini-button" onclick={resetActiveView} aria-label="Reset view" title="Reset view">🔄</button>
+        </div>
+        <label class="label" for="zoom-level">
+          Zoom: {(stageTab === 'player' ? playerViewScale : viewScale).toFixed(1)}x
+        </label>
+        <input
+          id="zoom-level"
+          type="range"
+          min="1"
+          max="3"
+          step="0.1"
+          value={stageTab === 'player' ? playerViewScale : viewScale}
+          oninput={onActiveViewZoomInput}
+          onchange={onActiveViewZoomCommit}
+        />
+        {#if showDirectionControls}
+          <div class="arrow-row">
+            <button type="button" class="arrow-button" aria-label="Pan left" onclick={() => nudgePan(-40, 0)}>&larr;</button>
+            <button type="button" class="arrow-button" aria-label="Pan up" onclick={() => nudgePan(0, -40)}>&uarr;</button>
+            <button type="button" class="arrow-button" aria-label="Pan down" onclick={() => nudgePan(0, 40)}>&darr;</button>
+            <button type="button" class="arrow-button" aria-label="Pan right" onclick={() => nudgePan(40, 0)}>&rarr;</button>
+          </div>
+        {/if}
 
         <h2>Refresh mode</h2>
         <div class="button-row">
@@ -1015,34 +1068,12 @@
         <button type="button" onclick={openPlayerView}>Open Player Site</button>
       </div>
 
-      {#if stageTab === 'player'}
-        <div class="player-controls">
-          <label class="label" for="player-zoom-level">Player zoom: {playerViewScale.toFixed(1)}x</label>
-          <input
-            id="player-zoom-level"
-            type="range"
-            min="1"
-            max="3"
-            step="0.1"
-            bind:value={playerViewScale}
-            onchange={() => void syncPlayerView()}
-          />
-          <div class="arrow-row">
-            <button type="button" class="arrow-button" aria-label="Player pan left" onclick={() => nudgePlayerView(-40, 0)}>&larr;</button>
-            <button type="button" class="arrow-button" aria-label="Player pan up" onclick={() => nudgePlayerView(0, -40)}>&uarr;</button>
-            <button type="button" class="arrow-button" aria-label="Player pan down" onclick={() => nudgePlayerView(0, 40)}>&darr;</button>
-            <button type="button" class="arrow-button" aria-label="Player pan right" onclick={() => nudgePlayerView(40, 0)}>&rarr;</button>
-          </div>
-          <button type="button" onclick={resetPlayerView}>Reset player view</button>
-        </div>
-      {/if}
-
       <div class="stage" bind:this={stageEl}>
         <div
           class="viewport"
           style={stageTab === 'dm'
             ? `transform: translate(${viewOffsetX}px, ${viewOffsetY}px) scale(${viewScale});`
-            : `transform: translate(${-playerViewOffsetX}px, ${-playerViewOffsetY}px) scale(${playerViewScale});`}
+            : `transform: translate(${playerViewOffsetX}px, ${playerViewOffsetY}px) scale(${playerViewScale});`}
         >
           {#if mapImageUrl}
             <img class="map" src={mapImageUrl} alt="Active map" draggable="false" />
@@ -1057,7 +1088,7 @@
             onpointermove={onStagePointerMove}
             onpointerup={onStagePointerUp}
             onpointercancel={onStagePointerUp}
-            style={stageTab === 'player' ? 'pointer-events: none;' : ''}
+            style={stageTab === 'player' ? 'cursor: grab;' : ''}
           ></canvas>
         </div>
       </div>
@@ -1065,7 +1096,7 @@
         {#if stageTab === 'dm'}
           Brush paints continuously. Rectangle applies on pointer release. Enable pan mode to drag the view.
         {:else}
-          Player View controls what players see on the player site.
+          Player View controls what players see on the player site. Drag on the map to pan.
         {/if}
       </p>
     </section>

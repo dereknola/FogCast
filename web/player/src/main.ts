@@ -37,11 +37,12 @@ if (!statusEl) {
 
 const canvas = canvasEl;
 const status = statusEl;
-const gl = canvas.getContext('webgl');
-if (!gl) {
+const webglContext = canvas.getContext('webgl');
+if (!webglContext) {
   status.textContent = 'This device/browser does not support WebGL. FogCast player requires WebGL support.';
   throw new Error('Missing WebGL context');
 }
+const gl: WebGLRenderingContext = webglContext;
 
 // Dirty-rectangle updates may have widths that are not multiples of 4 bytes.
 // Use byte alignment 1 so tex(Sub)Image uploads are not row-corrupted.
@@ -281,7 +282,9 @@ function render() {
   const scaleX = Math.max(scaledWidth / canvas.width, 0.0001);
   const scaleY = Math.max(scaledHeight / canvas.height, 0.0001);
   const offsetX = viewX / canvas.width;
-  const offsetY = viewY / canvas.height;
+  // Shader Y coordinates are bottom-origin, while our view math is top-origin.
+  // Convert the top-left viewport Y into the shader's bottom-edge offset.
+  const offsetY = (canvas.height - viewY - scaledHeight) / canvas.height;
 
   gl.useProgram(program);
 

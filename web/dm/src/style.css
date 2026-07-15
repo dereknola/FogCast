@@ -54,6 +54,14 @@ p {
   gap: 0.8rem;
 }
 
+.controls h2 {
+  margin-bottom: 0;
+}
+
+.controls h2 + * {
+  margin-top: -0.35rem;
+}
+
 .tab-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -115,6 +123,24 @@ button:disabled {
   gap: 0.5rem;
 }
 
+.view-toggle-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.icon-mini-button {
+  min-width: 2.1rem;
+  height: 2.1rem;
+  padding: 0;
+  font-size: 1.05rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .pan-row {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -158,6 +184,17 @@ input[type="range"] {
 .player-controls {
   display: grid;
   gap: 0.5rem;
+}
+
+.player-zoom-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.player-zoom-row .icon-mini-button {
+  justify-self: center;
 }
 
 .stage-header {
