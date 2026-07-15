@@ -1,3 +1,8 @@
+
+<p align="center">
+	<img src="images/fog_cast.jpg" alt="FogCast logo" width="360">
+</p>
+
 # FogCast
 
 FogCast is an ultra-lightweight, self-hosted fog-of-war system built specifically to bring your digital battlemaps to life during in-person gaming sessions. 
@@ -16,9 +21,13 @@ If you use a projector, a TV laid flat on the table, or a large digital display 
 
 FogCast is **not** a fully-featured, complex Virtual Tabletop (VTT) with built-in character sheets, dice rollers, or chat windows. 
 
+| DM View | Player View |
+| - | - |
+| ![alt text](images/dm_view.jpg) | ![alt text](images/player_view.jpg) |
+
 ### My personal setup
 - A server running a dockerized FogCast instance, exposed via Cloudflare tunnel.
-- A android TV projector, running the playe view in a browser. Projects map onto tabletop.
+- A android TV projector, running the player view in a browser. Projects map onto tabletop.
 - A tablet running the DM view in a browser, connected to the same LAN.
 
 This project was inspired by https://github.com/dungeon-revealer/dungeon-revealer, but that project is no longer maintained and I wanted a simpler, more lightweight solution that could run on a low-power device. 
