@@ -16,7 +16,7 @@ RUN npm --prefix ./web/player run build
 
 FROM --platform=$BUILDPLATFORM tonistiigi/xx:1.9.0 AS xx
 
-FROM --platform=$BUILDPLATFORM golang:1.26-bookworm AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27-bookworm AS builder
 COPY --from=xx / /
 ARG TARGETPLATFORM
 WORKDIR /src
